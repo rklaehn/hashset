@@ -18,7 +18,9 @@ class SetBenchmark extends SimpleBenchmark {
    * - vector has expensive hashcode and equals
    * - collision is a type that is designed to produce many collisions
    */
-  @Param(Array("int", "string", "vector", "collision")) var keyType: String = "int"
+  @Param(Array("int")) var keyType: String = "int"
+  // @Param(Array("int", "string", "vector", "collision")) var keyType: String = "int"
+
   /**
    * The type to test.
    * - hashset is the s.c.i.HashSet from the scala distribution
@@ -53,7 +55,7 @@ class SetBenchmark extends SimpleBenchmark {
   var a: Set[Any] = null
   var b: Set[Any] = null
 
-  protected override def setUp() {
+  override def setUp() {
     // assignment from empty must not be done in the constructor but in setUp because that
     // is called after the parameters like collectionType are assigned
     a = empty
@@ -64,7 +66,7 @@ class SetBenchmark extends SimpleBenchmark {
       b += elem(i + k)
     }
   }
-
+             /*
   def timeUnion(reps: Int) = {
     var i = 0
     var result = a
@@ -93,7 +95,7 @@ class SetBenchmark extends SimpleBenchmark {
       i += 1
     }
     result
-  }
+  }               */
 
   def timeSubsetOf(reps: Int) = {
     var i = 0
@@ -108,6 +110,7 @@ class SetBenchmark extends SimpleBenchmark {
 
 object SetBenchmark {
   def main(args: Array[String]) {
-    Runner.main(classOf[SetBenchmark], args)
+    val args1 = Array("--saveResults", "./caliper-results/") ++ args
+    Runner.main(classOf[SetBenchmark], args1)
   }
 }
