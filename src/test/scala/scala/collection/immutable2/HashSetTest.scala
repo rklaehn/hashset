@@ -1,4 +1,9 @@
 package scala.collection.immutable2
+import language.postfixOps
+import org.scalatest._
+import matchers.ShouldMatchers
+import org.junit.runner.RunWith
+import org.scalatest.junit.JUnitRunner
 
 abstract class SetTest[T] {
 
@@ -17,13 +22,23 @@ abstract class SetTest[T] {
     require(elems.forall(s.contains _))
   }
 
-  def subsetTest() {
+  def subsetTestPositive() {
     val elems = (0 until n).map(createElement _)
     val a = make(elems)
     for (i<-0 until n) {
       val b_elems =  (0 until i).map(createElement _)
       val b = make(b_elems)
       require(b.subsetOf(a))
+    }
+  }
+
+  def subsetTestNegative() {
+    val elems = (0 until n).map(createElement _)
+    val a = make(elems)
+    for (i<-0 until n) {
+      val b_elems =  (0 until i).map(createElement _)
+      val b = make(b_elems)
+      require(!a.subsetOf(b))
     }
   }
 
@@ -113,7 +128,7 @@ abstract class SetTest[T] {
   def allTests() {
     buildTest()
     filterTest()
-    subsetTest()
+    subsetTestPositive()
     unionTest()
     intersectTest()
     diffTest()
@@ -132,23 +147,58 @@ object SetTest {
   }
 }
 
-object HashSetTest extends App {
+object HashSetTests {
 
-  val N = 2000
+  def N = 2000
 
-  val empty = HashSet.empty[Any]
+  lazy val empty = HashSet.empty[Any]
 
   case class Collision(i: Int) { override def hashCode = i / 5 }
 
-  val intTests = SetTest[Any](empty, N, x => x)
+  lazy val intTests = SetTest[Any](empty, N, x => x)
 
-  val stringTests = SetTest[Any](empty, N, i => i.toString.reverse.padTo(10, '0').reverse)
+  lazy val stringTests = SetTest[Any](empty, N, i => i.toString.reverse.padTo(10, '0').reverse)
 
-  val collisionTests = SetTest[Any](empty, N, i => Collision(i))
+  lazy val collisionTests = SetTest[Any](empty, N, i => Collision(i))
 
-  intTests.allTests()
+  lazy val setTests = Seq(intTests, stringTests, collisionTests)
 
-  stringTests.allTests()
+  def all(f:SetTest[Any] => Any) {
+    for(test<-setTests)
+      f(test)
+  }
+}
 
-  collisionTests.allTests()
+@RunWith(classOf[JUnitRunner])
+class HashSetSpec extends FlatSpec with ShouldMatchers {
+
+  import HashSetTests.all
+
+  "a HashSet" should "have equality that does not depend on order of elements" in {
+    HashSet(1,2) == HashSet(2, 1)
+//    Rational(4,2) should equal (Rational(2))
+//    Rational(9,6) should equal (Rational(3,2))
+  }
+
+  it should "contain all elements that have been added to it, and no others" in all(_.buildTest())
+
+  "The filter method" should "produce sets of just elements that match the given predicate" in all(_.filterTest())
+
+  it should "return the original instance instead of an identical copy whenever possible" in all(_.filterSharingTest())
+
+  "the subsetOf method" should "return true for all subsets of the set" in all(_.subsetTestPositive())
+
+  it should "return false when called with a subset of the set" in all(_.subsetTestNegative())
+
+  "The intersect method" should "work identical to the filter method" in all(_.intersectTest())
+
+  it should "return the original instance instead of an identical copy whenever possible" in all(_.intersectSharingTest())
+
+  "The diff method" should "work identical to the filterNot method" in all(_.diffTest())
+
+  it should "return the original instance instead of an identical copy whenever possible" in all(_.diffTest())
+
+  "The union method" should "produce a set that contains all elements of its left and right argument" in all(_.unionTest())
+
+  it should "return the original instance instead of an identical copy whenever possible" in all(_.unionSharingTest())
 }

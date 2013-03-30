@@ -6,11 +6,11 @@ class SetBenchmark extends SimpleBenchmark {
   /**
    * The size of the set being tested
    */
-  @Param(Array("2" ,"10","100")) var size:Int = 0
+  @Param(Array("2" ,"10","100", "1000")) var size:Int = 0
   /**
    * The "overlap factor" for various operations. 0 means full overlap, 1 means no overlap
    */
-  @Param(Array("0","0.25","0.5","0.75", "1")) var offset:Double = 0.0
+  @Param(Array("0","0.33","0.66", "1")) var offset:Double = 0.0
   /**
    * The key type.
    * - int has fast hashcode and equals,

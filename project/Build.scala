@@ -15,7 +15,9 @@ object Build extends Build {
     libraryDependencies ++= Seq(
         "com.google.code.java-allocation-instrumenter" % "java-allocation-instrumenter" % "2.0",
         "com.google.code.gson" % "gson" % "1.7.1",
-        "com.google.caliper" % "caliper" % "0.5-rc1"
+        "com.google.caliper" % "caliper" % "0.5-rc1",
+        "junit" % "junit" % "4.10",
+        "org.scalatest" %% "scalatest" % "1.9.1"
     ),
     resolvers += "sonatypeSnapshots" at "http://oss.sonatype.org/content/repositories/snapshots",
 
