@@ -1,0 +1,78 @@
+import com.google.caliper._
+import scala.collection.immutable.HashSet
+
+class FilterBenchmarkExpensiveHash extends SimpleBenchmark {
+  @Param(Array("1", "100", "10000", "1000000")) var size:Int = 0
+
+  case class Key(a:Long, b:Long, c:Long, d:Long)
+
+  var set = Set.empty[Key]
+
+  protected override def setUp() {
+    var t = HashSet.empty[Key]
+    for(i<-0 until size)
+      t += Key(i,i,i,i)
+    set = t
+  }
+
+  def timeFilterTrue(reps:Int) = {
+    var i=0
+    var result = set
+    val max = size
+    while(i<reps) {
+      result = set.filter(_.a<max)
+      i+=1
+    }
+    result
+  }
+
+  def timeFilterThreeQuarter(reps:Int) = {
+    var i=0
+    var result = set
+    val max = (size*3)/4
+    while(i<reps) {
+      result = set.filter(_.a<max)
+      i+=1
+    }
+    result
+  }
+
+  def timeFilterHalf(reps:Int) = {
+    var i=0
+    var result = set
+    val max = size/2
+    while(i<reps) {
+      result = set.filter(_.a<max)
+      i+=1
+    }
+    result
+  }
+
+  def timeFilterQuarter(reps:Int) = {
+    var i=0
+    var result = set
+    val max = size/4
+    while(i<reps) {
+      result = set.filter(_.a<max)
+      i+=1
+    }
+    result
+  }
+
+  def timeFilterFalse(reps:Int) = {
+    var i=0
+    var result = set
+    val max = 0
+    while(i<reps) {
+      result = set.filter(_.a<max)
+      i+=1
+    }
+    result
+  }
+}
+
+object FilterBenchmarkExpensiveHash {
+  def main(args:Array[String]) {
+    Runner.main(classOf[FilterBenchmarkExpensiveHash], args:_*)
+  }
+}
