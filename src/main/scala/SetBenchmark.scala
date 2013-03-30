@@ -3,9 +3,27 @@ import scala.collection.immutable._
 import scala.collection.immutable2.{HashSet => HashSet2}
 
 class SetBenchmark extends SimpleBenchmark {
-  @Param(Array("2" ,"10","100","1000", "10000")) var size:Int = 0  
+  /**
+   * The size of the set being tested
+   */
+  @Param(Array("2" ,"10","100")) var size:Int = 0
+  /**
+   * The "overlap factor" for various operations. 0 means full overlap, 1 means no overlap
+   */
   @Param(Array("0","0.25","0.5","0.75", "1")) var offset:Double = 0.0
+  /**
+   * The key type.
+   * - int has fast hashcode and equals,
+   * - string has fast (cached) hashcode but slow equals
+   * - vector has expensive hashcode and equals
+   * - collision is a type that is designed to produce many collisions
+   */
   @Param(Array("int","string","vector", "collision")) var keyType:String = "int"
+  /**
+   * The type to test.
+   * - hashset is the s.c.i.HashSet from the scala distribution
+   * - hashset2 is the new, hopefully faster, HashSet from s.c.i2
+   */
   @Param(Array("hashset2" ,"hashset")) var collectionType:String = "hashset2"
 
   case class Collision(x:Int) {
