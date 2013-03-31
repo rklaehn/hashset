@@ -700,30 +700,27 @@ object HashSet extends ImmutableSetFactory[HashSet] {
           var ia = 0
           var ib = 0
 
-          do {
+          // todo: try rewriting using tail recursion?
+          while(abm!=0) {
             // highest remaining bit in abm
             val alsb = abm ^ (abm & (abm - 1))
             // highest remaining bit in bbm
             val blsb = bbm ^ (bbm & (bbm - 1))
-            // we ran out of bits in abm, so since abm is a subset of bbm there is nothing more to do
-            if (alsb == 0)
-              return true
-
-            // if the bitmasks are the same, we need to check the subtrees
+            // if both trees have a bit set at the same position, we need to check the subtrees
             if (alsb == blsb) {
               if (!a(ia).subsetOf0(b(ib), level + 5))
                 return false
-              // clear uppermost remaining one bit in abm and increase the a index
+              // clear lowest remaining one bit in abm and increase the a index
               abm &= ~alsb; ia += 1
-              // clear uppermost remaining one bit in bbm and increase the b index
+              // clear lowest remaining one bit in bbm and increase the b index
               bbm &= ~blsb; ib += 1
             } else {
               // b must always have more bits set than a (we have made sure that abm is a subset of bbm above)
               assert(unsignedCompare(blsb, alsb))
-              // clear uppermost remaining one bit in bbm and increase the b index
+              // clear lowermost remaining one bit in bbm and increase the b index
               bbm &= ~blsb; ib += 1
             }
-          } while(true)
+          }
           true
         } else false
       case _ =>
