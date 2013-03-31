@@ -131,6 +131,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
     private[this] var buffers: Array[Array[HashSet[A]]] = null
 
+    // allocate a 32 element buffer for this level and increase the depth
     def getBuffer(): Array[HashSet[A]] = {
       if (buffers eq null)
         buffers = (new Array[Array[HashSet[A]]](7))
@@ -141,6 +142,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       result
     }
 
+    // decrease the depth
     def freeBuffer() {
       depth -= 1
     }
@@ -689,11 +691,14 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       (i < j) ^ (i < 0) ^ (j < 0)
 
     def filter0(p: A => Boolean, pool: BufferPool[A]): HashSet[A] = {
-      val r = pool.getBuffer()
       val a = this.elems
+      // state for iteration over a
       var abm = this.bitmap
-      var rbm = 0
       var ai = 0
+
+      // state for result buffer
+      val r = pool.getBuffer()
+      var rbm = 0
       var ri = 0
       var rs = 0
       // iterate over all one bits in abm
@@ -702,6 +707,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         val alsb = abm ^ (abm & (abm - 1))
         // filter the subnode (will return null as the empty node)
         val sub1 = a(ai).filter0(p, pool)
+        // if we have a result (might be the original node, we don't care)
         if(sub1 ne null) {
           // store node in result buffer
           r(ri) = sub1
@@ -712,11 +718,13 @@ object HashSet extends ImmutableSetFactory[HashSet] {
           // add result size
           rs += sub1.size
         }
+        // clear lowest remaining one bit in abm and increase the a index
         abm &= ~alsb
         ai += 1
       }
 
       pool.freeBuffer()
+      // if the size is the same, it must be the same node, so ignore what is in r
       if (size0 == rs)
         this
       else
