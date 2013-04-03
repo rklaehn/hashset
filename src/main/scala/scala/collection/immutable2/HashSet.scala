@@ -143,11 +143,11 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     }
 
     // decrease the depth
-    def freeBuffer() {
+    @inline def freeBuffer() {
       depth -= 1
     }
 
-    def level: Int = depth * 5
+    @inline def level: Int = depth * 5
   }
 
   implicit def canBuildFrom[A]: CanBuildFrom[Coll, A, HashSet[A]] = setCanBuildFrom[A]
@@ -500,6 +500,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         var ri = 0
         var rs = 0
 
+        // loop as long as there are bits left in either abm or bbm
         while((abm|bbm)!=0) {
           // highest remaining bit in abm
           val alsb = abm ^ (abm & (abm - 1))
@@ -560,13 +561,18 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         var bbm = that.bitmap
         var bi = 0
 
+        // if the bitmasks do not overlap, the result is definitely empty so we can abort here
+        if((abm&bbm) == 0)
+          return null
+
         // fetch a new temporary array that is guaranteed to be big enough (32 elements)
         val r = pool.getBuffer()
         var ri = 0
         var rs = 0
         var rbm = 0
 
-        while((abm|bbm)!=0) {
+        // loop as long as there are bits left that are set in both abm and bbm
+        while((abm&bbm)!=0) {
           // highest remaining bit in abm
           val alsb = abm ^ (abm & (abm - 1))
           // highest remaining bit in bbm
@@ -631,7 +637,8 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         var rs = 0
         var rbm = 0
 
-        while((abm|bbm)!=0) {
+        // loop until there are no more bits in abm
+        while(abm!=0) {
           // highest remaining bit in abm
           val alsb = abm ^ (abm & (abm - 1))
           // highest remaining bit in bbm
@@ -665,34 +672,6 @@ object HashSet extends ImmutableSetFactory[HashSet] {
             }
           }
         }
-//
-//        var mask = 1
-//        while (mask != 0) {
-//          val aset = (abm & mask) == mask
-//          val bset = (bbm & mask) == mask
-//          if (aset && bset) {
-//            val subNew = a(ai).diff0(b(bi), pool)
-//            if (subNew ne null) {
-//              r(ri) = subNew
-//              rbm |= mask
-//              rs += subNew.size
-//              ri += 1
-//            }
-//            ai += 1
-//            bi += 1
-//          } else if (aset) {
-//            val subNew = a(ai)
-//            r(ri) = subNew
-//            rs += subNew.size
-//            rbm |= mask
-//            ri += 1
-//            ai += 1
-//          }
-//          else if (bset) {
-//            bi += 1
-//          }
-//          mask <<= 1
-//        }
         pool.freeBuffer()
         if(rs == this.size0)
           // if the result has the same number of elements as this, it must be identical to this,
@@ -730,7 +709,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         val alsb = abm ^ (abm & (abm - 1))
         // filter the subnode (will return null as the empty node)
         val sub1 = a(ai).filter0(p, pool)
-        // if we have a result (might be the original node, we don't care)
+        // if we have a non-empty result (might be the original node, we don't care)
         if(sub1 ne null) {
           // store node in result buffer
           r(ri) = sub1
