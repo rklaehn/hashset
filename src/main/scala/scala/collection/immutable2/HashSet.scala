@@ -388,9 +388,9 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
     private[this] def newInstance(bitmap: Int, buffer: Array[HashSet[A]], length: Int, size: Int) = {
       if (length == 0)
-        null
+        null // marker for the empty set
       else if (length == 1 && !buffer(0).isInstanceOf[HashSet.HashTrieSet[_]])
-        buffer(0)
+        buffer(0) // only return HashTrieSet if it is necessary to retain the structure
       else
         new HashTrieSet[A](bitmap, truncate(buffer, length), size)
     }
@@ -495,37 +495,43 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         var bbm = that.bitmap
         var bi = 0
 
-        // construct a new array of appropriate size
+        // fetch a new temporary array that is guaranteed to be big enough (32 elements)
         val r = pool.getBuffer()
         var ri = 0
         var rs = 0
 
-        // run through both bitmaps and add elements to it
-        var mask = 1
-        while (mask != 0) {
-          val aset = (abm & mask) == mask
-          val bset = (bbm & mask) == mask
-          if (aset && bset) {
-            val subNew = a(ai).union0(b(bi), pool)
-            r(ri) = subNew
-            rs += subNew.size
-            ri += 1
-            ai += 1
-            bi += 1
-          } else if (aset) {
-            val subNew = a(ai)
-            r(ri) = subNew
-            rs += subNew.size
-            ri += 1
-            ai += 1
-          } else if (bset) {
-            val subNew = b(bi)
-            r(ri) = subNew
-            rs += subNew.size
-            ri += 1
-            bi += 1
+        while((abm|bbm)!=0) {
+          // highest remaining bit in abm
+          val alsb = abm ^ (abm & (abm - 1))
+          // highest remaining bit in bbm
+          val blsb = bbm ^ (bbm & (bbm - 1))
+          if (alsb == blsb) {
+            val sub1 = a(ai).union0(b(bi), pool)
+            rs += sub1.size
+            r(ri) = sub1; ri += 1
+            // clear lowest remaining one bit in abm and increase the a index
+            abm &= ~alsb; ai += 1
+            // clear lowest remaining one bit in bbm and increase the b index
+            bbm &= ~blsb; bi += 1
+          } else {
+            if (unsignedCompare(alsb - 1, blsb - 1)) {
+              // alsb is smaller than blsb, or alsb is set and blsb is 0
+              // in any case, alsb is guaranteed to be set here!
+              val sub1 = a(ai)
+              rs += sub1.size
+              r(ri) = sub1; ri += 1
+              // clear lowest remaining one bit in abm and increase the a index
+              abm &= ~alsb; ai += 1
+            } else {
+              // blsb is smaller than alsb, or blsb is set and alsb is 0
+              // in any case, blsb is guaranteed to be set here!
+              val sub1 = b(bi)
+              rs += sub1.size
+              r(ri) = sub1; ri += 1
+              // clear lowest remaining one bit in bbm and increase the b index
+              bbm &= ~blsb; bi += 1
+            }
           }
-          mask <<= 1
         }
         pool.freeBuffer()
         val rbm = this.bitmap | that.bitmap
