@@ -66,7 +66,7 @@ class SetBenchmark extends SimpleBenchmark {
       b += elem(i + k)
     }
   }
-             /*
+
   def timeUnion(reps: Int) = {
     var i = 0
     var result = a
@@ -95,7 +95,7 @@ class SetBenchmark extends SimpleBenchmark {
       i += 1
     }
     result
-  }               */
+  }
 
   def timeSubsetOf(reps: Int) = {
     var i = 0
