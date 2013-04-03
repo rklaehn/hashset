@@ -735,42 +735,14 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     else that match {
       case that: HashTrieSet[A] =>
         // create local copies of bitmap members
-        val abm = this.bitmap
-        val bbm = that.bitmap
+        var abm = this.bitmap
+        var ia = 0
+        val a = this.elems
+        var bbm = that.bitmap
+        var ib = 0
+        val b = that.elems
         if ((abm & bbm) == abm) {
-          // a can only be a subset of b if a.bitmap is a subset of b.bitmap
-
-          // create local copies of array members
-          val a = this.elems
-          val b = that.elems
-
-          // loop through all elements
-          @tailrec @inline def subset0(abm:Int, ai:Int, bbm:Int, bi:Int) : Boolean =
-            if(abm==0) true
-            else {
-              // highest remaining bit in abm
-              val alsb = abm ^ (abm & (abm - 1))
-              // highest remaining bit in bbm
-              val blsb = bbm ^ (bbm & (bbm - 1))
-              // if both trees have a bit set at the same position, we need to check the subtrees
-              if(alsb == blsb) {
-                if (a(ai).subsetOf0(b(bi), level + 5)) {
-                  // clear lowest remaining one bit in abm and increase the a index
-                  // clear lowest remaining one bit in bbm and increase the b index
-                  subset0(abm & ~alsb, ai + 1, bbm & ~blsb, bi+1)
-                } else false
-              } else {
-                // b must always have more bits set than a (we have made sure that abm is a subset of bbm above)
-                assert(unsignedCompare(blsb, alsb))
-                // clear lowermost remaining one bit in bbm and increase the b index
-                subset0(abm, ai, bbm & ~blsb, bi + 1)
-              }
-            }
-
-          subset0(abm, 0, bbm, 0)
-
-          /*
-          // todo: try rewriting using tail recursion?
+          // I tried rewriting this using tail recursion, but the generated java byte code was less than optimal
           while(abm!=0) {
             // highest remaining bit in abm
             val alsb = abm ^ (abm & (abm - 1))
@@ -791,7 +763,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
               bbm &= ~blsb; ib += 1
             }
           }
-          true */
+          true
         } else false
       case _ =>
         // if the other set is a HashSet1, we can not be a subset of it because we are a HashTrieSet with at least two children (see assertion)
