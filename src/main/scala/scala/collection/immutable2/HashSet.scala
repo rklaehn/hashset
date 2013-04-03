@@ -178,7 +178,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     }
   }
 
-  private def nullToEmpty[A](s: HashSet[A]): HashSet[A] = if (s eq null) empty[A] else s
+  @inline private def nullToEmpty[A](s: HashSet[A]): HashSet[A] = if (s eq null) empty[A] else s
 
   private final class EmptySet[A] extends HashSet[A] {
 
