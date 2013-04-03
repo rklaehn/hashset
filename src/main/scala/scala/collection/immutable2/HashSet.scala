@@ -618,51 +618,88 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         removed0(hs.key, hs.hash, pool.level)
       case that: HashTrieSet[A] =>
         val a = this.elems
-        val b = that.elems
-        val abm = this.bitmap
-        val bbm = that.bitmap
-        var rbm = 0
-        var ia = 0
-        var ib = 0
-        var ir = 0
-        var rs = 0
+        var abm = this.bitmap
+        var ai = 0
 
-        // construct a new array of maximum possible size
+        val b = that.elems
+        var bbm = that.bitmap
+        var bi = 0
+
+        // fetch a new temporary array that is guaranteed to be big enough (32 elements)
         val r = pool.getBuffer()
-        var mask = 1
-        while (mask != 0) {
-          val aset = (abm & mask) == mask
-          val bset = (bbm & mask) == mask
-          if (aset && bset) {
-            val subNew = a(ia).diff0(b(ib), pool)
-            if (subNew ne null) {
-              r(ir) = subNew
-              rbm |= mask
-              rs += subNew.size
-              ir += 1
+        var ri = 0
+        var rs = 0
+        var rbm = 0
+
+        while((abm|bbm)!=0) {
+          // highest remaining bit in abm
+          val alsb = abm ^ (abm & (abm - 1))
+          // highest remaining bit in bbm
+          val blsb = bbm ^ (bbm & (bbm - 1))
+          if (alsb == blsb) {
+            val sub1 = a(ai).diff0(b(bi), pool)
+            if (sub1 ne null) {
+              rs += sub1.size
+              rbm |= alsb
+              r(ri) = sub1; ri += 1
             }
-            ia += 1
-            ib += 1
-          } else if (aset) {
-            val subNew = a(ia)
-            r(ir) = subNew
-            rs += subNew.size
-            rbm |= mask
-            ir += 1
-            ia += 1
+            // clear lowest remaining one bit in abm and increase the a index
+            abm &= ~alsb; ai += 1
+            // clear lowest remaining one bit in bbm and increase the b index
+            bbm &= ~blsb; bi += 1
+          } else {
+            if (unsignedCompare(alsb - 1, blsb - 1)) {
+              // alsb is smaller than blsb, or alsb is set and blsb is 0
+              // in any case, alsb is guaranteed to be set here!
+              val sub1 = a(ai)
+              rs += sub1.size
+              rbm |= alsb
+              r(ri) = sub1; ri += 1
+              // clear lowest remaining one bit in abm and increase the a index
+              abm &= ~alsb; ai += 1
+            } else {
+              // blsb is smaller than alsb, or blsb is set and alsb is 0
+              // in any case, blsb is guaranteed to be set here!
+              // clear lowest remaining one bit in bbm and increase the b index
+              bbm &= ~blsb; bi += 1
+            }
           }
-          else if (bset) {
-            ib += 1
-          }
-          mask <<= 1
         }
+//
+//        var mask = 1
+//        while (mask != 0) {
+//          val aset = (abm & mask) == mask
+//          val bset = (bbm & mask) == mask
+//          if (aset && bset) {
+//            val subNew = a(ai).diff0(b(bi), pool)
+//            if (subNew ne null) {
+//              r(ri) = subNew
+//              rbm |= mask
+//              rs += subNew.size
+//              ri += 1
+//            }
+//            ai += 1
+//            bi += 1
+//          } else if (aset) {
+//            val subNew = a(ai)
+//            r(ri) = subNew
+//            rs += subNew.size
+//            rbm |= mask
+//            ri += 1
+//            ai += 1
+//          }
+//          else if (bset) {
+//            bi += 1
+//          }
+//          mask <<= 1
+//        }
         pool.freeBuffer()
         if(rs == this.size0)
           // if the result has the same number of elements as this, it must be identical to this,
           // so we might as well return this
           this
         else
-          newInstance(rbm, r, ir, rs)
+          newInstance(rbm, r, ri, rs)
       case hs: HashSetCollision1[A] =>
         var this1: HashSet[A] = this
         for (k <- hs.ks)
