@@ -10,6 +10,7 @@ object Build extends Build {
     organization := "rklaehn",
     version := "1.0.0-SNAPSHOT",
     scalaVersion := "2.10.1",
+    scalacOptions += "-optimize",
 
     // dependencies
     libraryDependencies ++= Seq(
