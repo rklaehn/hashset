@@ -553,36 +553,48 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         that.intersect0(this, pool)
       case that: HashTrieSet[A] =>
         val a = this.elems
-        val b = that.elems
-        val abm = this.bitmap
-        val bbm = that.bitmap
-        var rbm = 0
-        var ia = 0
-        var ib = 0
-        var ir = 0
-        var rs = 0
+        var abm = this.bitmap
+        var ai = 0
 
+        val b = that.elems
+        var bbm = that.bitmap
+        var bi = 0
+
+        // fetch a new temporary array that is guaranteed to be big enough (32 elements)
         val r = pool.getBuffer()
-        var mask = 1
-        while (mask != 0) {
-          val aset = (abm & mask) == mask
-          val bset = (bbm & mask) == mask
-          if (aset && bset) {
-            val subNew = a(ia).intersect0(b(ib), pool)
-            if (subNew ne null) {
-              r(ir) = subNew
-              rbm |= mask
-              rs += subNew.size
-              ir += 1
+        var ri = 0
+        var rs = 0
+        var rbm = 0
+
+        while((abm|bbm)!=0) {
+          // highest remaining bit in abm
+          val alsb = abm ^ (abm & (abm - 1))
+          // highest remaining bit in bbm
+          val blsb = bbm ^ (bbm & (bbm - 1))
+          if (alsb == blsb) {
+            val sub1 = a(ai).intersect0(b(bi), pool)
+            if (sub1 ne null) {
+              rs += sub1.size
+              rbm |= alsb
+              r(ri) = sub1; ri += 1
             }
-            ia += 1
-            ib += 1
-          } else if (aset) {
-            ia += 1
-          } else if (bset) {
-            ib += 1
+            // clear lowest remaining one bit in abm and increase the a index
+            abm &= ~alsb; ai += 1
+            // clear lowest remaining one bit in bbm and increase the b index
+            bbm &= ~blsb; bi += 1
+          } else {
+            if (unsignedCompare(alsb - 1, blsb - 1)) {
+              // alsb is smaller than blsb, or alsb is set and blsb is 0
+              // in any case, alsb is guaranteed to be set here!
+              // clear lowest remaining one bit in abm and increase the a index
+              abm &= ~alsb; ai += 1
+            } else {
+              // blsb is smaller than alsb, or blsb is set and alsb is 0
+              // in any case, blsb is guaranteed to be set here!
+              // clear lowest remaining one bit in bbm and increase the b index
+              bbm &= ~blsb; bi += 1
+            }
           }
-          mask <<= 1
         }
         pool.freeBuffer()
 
@@ -595,7 +607,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
           // so we might as well return that
           that
         else
-          newInstance(rbm, r, ir, rs)
+          newInstance(rbm, r, ri, rs)
       case hs: HashSetCollision1[_] => that.intersect0(this, pool)
       case _ => null
     }
