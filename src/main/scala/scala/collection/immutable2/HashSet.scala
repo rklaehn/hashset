@@ -482,80 +482,48 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       }
     }
 
-    /*
-    def filter0(p: A => Boolean, pool: BufferPool[A]): HashSet[A] = {
-      var i = 0
-      var ir = 0
-      var rbm = 0
-      var rs = 0
-      val r = pool.getBuffer()
-      // iterate over all 32 masks even though just a few of them might be occupied.
-      // this iteration is much cheaper than calling Integer.bitCount
-      var mask = 1
-      while (mask != 0) {
-        if ((bitmap & mask) != 0) {
-          val sub = elems(i)
-          val subNew = sub.filter0(p, pool)
-          if (subNew ne null) {
-            r(ir) = subNew
-            rs += subNew.size
-            rbm |= mask
-            ir += 1
-          }
-          // increase the offset for each occupied slot. That way we don't have to invoke Integer.bitCount
-          i += 1
-        }
-        mask <<= 1
-      }
-
-      pool.freeBuffer()
-      if (size0 == rs)
-        this
-      else
-        newInstance(rbm, r, ir, rs)
-    } */
-
     def union0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = if (that eq this) this
     else that match {
       case that: HashSet1[A] =>
         this.union0(that, pool.level)
       case that: HashTrieSet[A] =>
         val a = this.elems
+        var abm = this.bitmap
+        var ai = 0
+
         val b = that.elems
-        val abm = this.bitmap
-        val bbm = that.bitmap
+        var bbm = that.bitmap
+        var bi = 0
 
         // construct a new array of appropriate size
         val r = pool.getBuffer()
+        var ri = 0
+        var rs = 0
 
         // run through both bitmaps and add elements to it
-        var ir = 0
-        var ia = 0
-        var ib = 0
-        var rs = 0
         var mask = 1
         while (mask != 0) {
           val aset = (abm & mask) == mask
           val bset = (bbm & mask) == mask
           if (aset && bset) {
-            val subNew = a(ia).union0(b(ib), pool)
-            r(ir) = subNew
+            val subNew = a(ai).union0(b(bi), pool)
+            r(ri) = subNew
             rs += subNew.size
-            ir += 1
-            ia += 1
-            ib += 1
+            ri += 1
+            ai += 1
+            bi += 1
           } else if (aset) {
-            val subNew = a(ia)
-            r(ir) = subNew
+            val subNew = a(ai)
+            r(ri) = subNew
             rs += subNew.size
-            ir += 1
-            ia += 1
+            ri += 1
+            ai += 1
           } else if (bset) {
-            val subNew = b(ib)
-            r(ir) = subNew
+            val subNew = b(bi)
+            r(ri) = subNew
             rs += subNew.size
-            ir += 1
-            ib += 1
+            ri += 1
+            bi += 1
           }
           mask <<= 1
         }
@@ -568,7 +536,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
           // if the result would be identical to that, we might as well return that
           that
         else
-          newInstance(this.bitmap | that.bitmap, r, ir, rs)
+          newInstance(this.bitmap | that.bitmap, r, ri, rs)
       case hs: HashSetCollision1[A] => that.union0(this, pool)
       case _ => this
     }
@@ -734,43 +702,16 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     def subsetOf0(that: HashSet[A], level: Int): Boolean = if (that eq this) true
     else that match {
       case that: HashTrieSet[A] =>
-        // create local copies of bitmap members
-        val abm = this.bitmap
-        val bbm = that.bitmap
+        // create local copies of members
+        var abm = this.bitmap
+        val a = this.elems
+        var ai = 0
+        val b = that.elems
+        var bbm = that.bitmap
+        var bi = 0
+        // I tried rewriting this as a tail-recursive function. But the generated jvm bytecode was less than optimal,
         if ((abm & bbm) == abm) {
-          // a can only be a subset of b if a.bitmap is a subset of b.bitmap
-
-          // create local copies of array members
-          val a = this.elems
-          val b = that.elems
-
-          // loop through all elements
-          @tailrec @inline def subset0(abm:Int, ai:Int, bbm:Int, bi:Int) : Boolean =
-            if(abm==0) true
-            else {
-              // highest remaining bit in abm
-              val alsb = abm ^ (abm & (abm - 1))
-              // highest remaining bit in bbm
-              val blsb = bbm ^ (bbm & (bbm - 1))
-              // if both trees have a bit set at the same position, we need to check the subtrees
-              if(alsb == blsb) {
-                if (a(ai).subsetOf0(b(bi), level + 5)) {
-                  // clear lowest remaining one bit in abm and increase the a index
-                  // clear lowest remaining one bit in bbm and increase the b index
-                  subset0(abm & ~alsb, ai + 1, bbm & ~blsb, bi+1)
-                } else false
-              } else {
-                // b must always have more bits set than a (we have made sure that abm is a subset of bbm above)
-                assert(unsignedCompare(blsb, alsb))
-                // clear lowermost remaining one bit in bbm and increase the b index
-                subset0(abm, ai, bbm & ~blsb, bi + 1)
-              }
-            }
-
-          subset0(abm, 0, bbm, 0)
-
-          /*
-          // todo: try rewriting using tail recursion?
+          // I tried rewriting this using tail recursion, but the generated java byte code was less than optimal
           while(abm!=0) {
             // highest remaining bit in abm
             val alsb = abm ^ (abm & (abm - 1))
@@ -778,20 +719,19 @@ object HashSet extends ImmutableSetFactory[HashSet] {
             val blsb = bbm ^ (bbm & (bbm - 1))
             // if both trees have a bit set at the same position, we need to check the subtrees
             if (alsb == blsb) {
-              if (!a(ia).subsetOf0(b(ib), level + 5))
+              if (!a(ai).subsetOf0(b(bi), level + 5))
                 return false
               // clear lowest remaining one bit in abm and increase the a index
-              abm &= ~alsb; ia += 1
-              // clear lowest remaining one bit in bbm and increase the b index
-              bbm &= ~blsb; ib += 1
+              abm &= ~alsb; ai += 1
             } else {
               // b must always have more bits set than a (we have made sure that abm is a subset of bbm above)
-              assert(unsignedCompare(blsb, alsb))
-              // clear lowermost remaining one bit in bbm and increase the b index
-              bbm &= ~blsb; ib += 1
+              // assert(unsignedCompare(blsb, alsb))
             }
+            // clear lowermost remaining one bit in bbm and increase the b index
+            // we must do this in any case
+            bbm &= ~blsb; bi += 1
           }
-          true */
+          true
         } else false
       case _ =>
         // if the other set is a HashSet1, we can not be a subset of it because we are a HashTrieSet with at least two children (see assertion)
