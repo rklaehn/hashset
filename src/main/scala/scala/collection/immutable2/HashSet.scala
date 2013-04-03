@@ -514,24 +514,22 @@ object HashSet extends ImmutableSetFactory[HashSet] {
             abm &= ~alsb; ai += 1
             // clear lowest remaining one bit in bbm and increase the b index
             bbm &= ~blsb; bi += 1
+          } else if (unsignedCompare(alsb - 1, blsb - 1)) {
+            // alsb is smaller than blsb, or alsb is set and blsb is 0
+            // in any case, alsb is guaranteed to be set here!
+            val sub1 = a(ai)
+            rs += sub1.size
+            r(ri) = sub1; ri += 1
+            // clear lowest remaining one bit in abm and increase the a index
+            abm &= ~alsb; ai += 1
           } else {
-            if (unsignedCompare(alsb - 1, blsb - 1)) {
-              // alsb is smaller than blsb, or alsb is set and blsb is 0
-              // in any case, alsb is guaranteed to be set here!
-              val sub1 = a(ai)
-              rs += sub1.size
-              r(ri) = sub1; ri += 1
-              // clear lowest remaining one bit in abm and increase the a index
-              abm &= ~alsb; ai += 1
-            } else {
-              // blsb is smaller than alsb, or blsb is set and alsb is 0
-              // in any case, blsb is guaranteed to be set here!
-              val sub1 = b(bi)
-              rs += sub1.size
-              r(ri) = sub1; ri += 1
-              // clear lowest remaining one bit in bbm and increase the b index
-              bbm &= ~blsb; bi += 1
-            }
+            // blsb is smaller than alsb, or blsb is set and alsb is 0
+            // in any case, blsb is guaranteed to be set here!
+            val sub1 = b(bi)
+            rs += sub1.size
+            r(ri) = sub1; ri += 1
+            // clear lowest remaining one bit in bbm and increase the b index
+            bbm &= ~blsb; bi += 1
           }
         }
         pool.freeBuffer()
@@ -588,18 +586,16 @@ object HashSet extends ImmutableSetFactory[HashSet] {
             abm &= ~alsb; ai += 1
             // clear lowest remaining one bit in bbm and increase the b index
             bbm &= ~blsb; bi += 1
+          } else if (unsignedCompare(alsb - 1, blsb - 1)) {
+            // alsb is smaller than blsb, or alsb is set and blsb is 0
+            // in any case, alsb is guaranteed to be set here!
+            // clear lowest remaining one bit in abm and increase the a index
+            abm &= ~alsb; ai += 1
           } else {
-            if (unsignedCompare(alsb - 1, blsb - 1)) {
-              // alsb is smaller than blsb, or alsb is set and blsb is 0
-              // in any case, alsb is guaranteed to be set here!
-              // clear lowest remaining one bit in abm and increase the a index
-              abm &= ~alsb; ai += 1
-            } else {
-              // blsb is smaller than alsb, or blsb is set and alsb is 0
-              // in any case, blsb is guaranteed to be set here!
-              // clear lowest remaining one bit in bbm and increase the b index
-              bbm &= ~blsb; bi += 1
-            }
+            // blsb is smaller than alsb, or blsb is set and alsb is 0
+            // in any case, blsb is guaranteed to be set here!
+            // clear lowest remaining one bit in bbm and increase the b index
+            bbm &= ~blsb; bi += 1
           }
         }
         pool.freeBuffer()
@@ -654,22 +650,20 @@ object HashSet extends ImmutableSetFactory[HashSet] {
             abm &= ~alsb; ai += 1
             // clear lowest remaining one bit in bbm and increase the b index
             bbm &= ~blsb; bi += 1
+          } else if (unsignedCompare(alsb - 1, blsb - 1)) {
+            // alsb is smaller than blsb, or alsb is set and blsb is 0
+            // in any case, alsb is guaranteed to be set here!
+            val sub1 = a(ai)
+            rs += sub1.size
+            rbm |= alsb
+            r(ri) = sub1; ri += 1
+            // clear lowest remaining one bit in abm and increase the a index
+            abm &= ~alsb; ai += 1
           } else {
-            if (unsignedCompare(alsb - 1, blsb - 1)) {
-              // alsb is smaller than blsb, or alsb is set and blsb is 0
-              // in any case, alsb is guaranteed to be set here!
-              val sub1 = a(ai)
-              rs += sub1.size
-              rbm |= alsb
-              r(ri) = sub1; ri += 1
-              // clear lowest remaining one bit in abm and increase the a index
-              abm &= ~alsb; ai += 1
-            } else {
-              // blsb is smaller than alsb, or blsb is set and alsb is 0
-              // in any case, blsb is guaranteed to be set here!
-              // clear lowest remaining one bit in bbm and increase the b index
-              bbm &= ~blsb; bi += 1
-            }
+            // blsb is smaller than alsb, or blsb is set and alsb is 0
+            // in any case, blsb is guaranteed to be set here!
+            // clear lowest remaining one bit in bbm and increase the b index
+            bbm &= ~blsb; bi += 1
           }
         }
         pool.freeBuffer()
