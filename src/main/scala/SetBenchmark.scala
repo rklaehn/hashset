@@ -2,6 +2,8 @@ import com.google.caliper._
 import scala.collection.immutable._
 import scala.collection.immutable2.{HashSet => HashSet2}
 
+import ichi.bench.Thyme
+
 class SetBenchmark extends SimpleBenchmark {
   /**
    * The size of the set being tested
@@ -109,6 +111,9 @@ class SetBenchmark extends SimpleBenchmark {
 }
 
 object SetBenchmark {
+
+  val th = ichi.bench.Thyme.warmed()
+
   def main(args: Array[String]) {
     val args1 = Array("--saveResults", "./caliper-results/") ++ args
     Runner.main(classOf[SetBenchmark], args1)
