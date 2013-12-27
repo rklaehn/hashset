@@ -2,11 +2,9 @@ import scala.collection.immutable._
 import scala.collection.immutable2.{HashSet => HashSet2}
 import ichi.bench.Thyme
 
-case class SetBenchmark[T](size:Int, offset:Double, elem:Int => T)(empty:Set[T]) {
+object SetBenchmark {
 
-  val (a,b) = {
-    // assignment from empty must not be done in the constructor but in setUp because that
-    // is called after the parameters like collectionType are assigned
+  def makeSets[T](size:Int, offset:Double, elem:Int => T, empty:Set[T]) : (Set[T], Set[T]) = {
     var a = empty
     var b = empty
     val k = (size * offset).toInt
@@ -17,21 +15,15 @@ case class SetBenchmark[T](size:Int, offset:Double, elem:Int => T)(empty:Set[T])
     (a,b)
   }
 
-  def union = a.union(b)
-
-  def intersect = a.intersect(b)
-
-  def diff = a.diff(b)
-
-  def subsetOf = a.subsetOf(b)
-}
-
-object SetBenchmark {
-
   val th = Thyme.warmed()
 
   case class Collision(x: Int) {
     override def hashCode = x / 3
+  }
+
+  def empty(setType:String) = setType match {
+    case "hashset" => HashSet.empty[Any]
+    case "hashset2" => HashSet2.empty[Any]
   }
 
   def elem(keyType:String)(i: Int) = keyType match {
@@ -49,13 +41,36 @@ object SetBenchmark {
   }
 
   def main(args: Array[String]) {
+
+    def timeToString(time:Double) = (time*1000000).formatted("%.3f")
+
+    def ratioToString(r:Double) = r.formatted("%.3f")
+
     for {
       size <- Seq(1,10,100, 1000)
       offset <- Seq(0.0, 0.33, 0.66, 1.0)
       keyType <- Seq("int", "string", "vector", "collision")
     }
     {
-      val bench = SetBenchmark(size, offset, elem(keyType)) _
+      val (a0, b0) = makeSets(size, offset, elem(keyType), HashSet.empty)
+      val (a1, b1) = makeSets(size, offset, elem(keyType), HashSet2.empty)
+      val (_, t0) = th.clockPair(a0.subsetOf(b0))
+      val (_, t1) = th.clockPair(a1.subsetOf(b1))
+      val ratio = t0 / t1
+      println(s"$size\t$offset\t$keyType\t${timeToString(t0)}\t${timeToString(t1)}\t${ratioToString(ratio)}")
+//      th.clockPair(bench.diff)
+//      th.clockPair(bench.subsetOf)
+//      th.clockPair(bench.intersect)
+    }
+
+    /*
+    for {
+      size <- Seq(1,10,100, 1000, 10000)
+      offset <- Seq(0.0, 0.33, 0.66, 1.0)
+      keyType <- Seq("int", "string", "vector", "collision")
+    }
+    {
+      val bench = (x:Set[Any]) => SetBenchmark(size, offset, elem(keyType), x)
       val bench1 = bench(HashSet.empty)
       val bench2 = bench(HashSet2.empty)
       th.pbenchOff(s"size $size offset $offset keyType $keyType op union")(bench2.union)(bench1.union)
@@ -63,5 +78,6 @@ object SetBenchmark {
       th.pbenchOff(s"size $size offset $offset keyType $keyType op subsetOf")(bench2.subsetOf)(bench1.subsetOf)
       th.pbenchOff(s"size $size offset $offset keyType $keyType op intersect")(bench2.intersect)(bench1.intersect)
     }
+    */
   }
 }

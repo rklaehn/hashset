@@ -751,9 +751,6 @@ object HashSet extends ImmutableSetFactory[HashSet] {
                 return false
               // clear lowest remaining one bit in abm and increase the a index
               abm &= ~alsb; ai += 1
-            } else {
-              // b must always have more bits set than a (we have made sure that abm is a subset of bbm above)
-              // assert(unsignedCompare(blsb, alsb))
             }
             // clear lowermost remaining one bit in bbm and increase the b index
             // we must do this in any case
