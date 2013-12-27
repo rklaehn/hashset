@@ -1,46 +1,40 @@
-import com.google.caliper._
 import scala.collection.immutable._
 import scala.collection.immutable2.{HashSet => HashSet2}
-
 import ichi.bench.Thyme
 
-class SetBenchmark extends SimpleBenchmark {
-  /**
-   * The size of the set being tested
-   */
-  @Param(Array("2", "10", "100", "1000")) var size: Int = 0
-  /**
-   * The "overlap factor" for various operations. 0 means full overlap, 1 means no overlap
-   */
-  @Param(Array("0", "0.33", "0.66", "1")) var offset: Double = 0.0
-  /**
-   * The key type.
-   * - int has fast hashcode and equals,
-   * - string has fast (cached) hashcode but slow equals
-   * - vector has expensive hashcode and equals
-   * - collision is a type that is designed to produce many collisions
-   */
-  @Param(Array("int")) var keyType: String = "int"
-  // @Param(Array("int", "string", "vector", "collision")) var keyType: String = "int"
+case class SetBenchmark[T](size:Int, offset:Double, elem:Int => T)(empty:Set[T]) {
 
-  /**
-   * The type to test.
-   * - hashset is the s.c.i.HashSet from the scala distribution
-   * - hashset2 is the new, hopefully faster, HashSet from s.c.i2
-   */
-  @Param(Array("hashset2", "hashset")) var collectionType: String = "hashset2"
+  val (a,b) = {
+    // assignment from empty must not be done in the constructor but in setUp because that
+    // is called after the parameters like collectionType are assigned
+    var a = empty
+    var b = empty
+    val k = (size * offset).toInt
+    for (i <- 0 until size) {
+      a += elem(i)
+      b += elem(i + k)
+    }
+    (a,b)
+  }
+
+  def union = a.union(b)
+
+  def intersect = a.intersect(b)
+
+  def diff = a.diff(b)
+
+  def subsetOf = a.subsetOf(b)
+}
+
+object SetBenchmark {
+
+  val th = Thyme.warmed()
 
   case class Collision(x: Int) {
     override def hashCode = x / 3
   }
 
-  def empty = collectionType match {
-    case "hashset" => HashSet.empty[Any]
-    case "hashset2" => HashSet2.empty[Any]
-    case x => throw new UnsupportedOperationException("Unknown collection type " + x)
-  }
-
-  def elem(i: Int) = keyType match {
+  def elem(keyType:String)(i: Int) = keyType match {
     case "int" => // a key type with cheap equals and cheap hash code
       i
     case "string" => // a key type with cheap (cached) hash code but expensive equals
@@ -54,68 +48,20 @@ class SetBenchmark extends SimpleBenchmark {
     case _ => throw new UnsupportedOperationException("Unknown element type " + keyType)
   }
 
-  var a: Set[Any] = null
-  var b: Set[Any] = null
-
-  override def setUp() {
-    // assignment from empty must not be done in the constructor but in setUp because that
-    // is called after the parameters like collectionType are assigned
-    a = empty
-    b = empty
-    val k = (size * offset).toInt
-    for (i <- 0 until size) {
-      a += elem(i)
-      b += elem(i + k)
-    }
-  }
-
-  def timeUnion(reps: Int) = {
-    var i = 0
-    var result = a
-    while (i < reps) {
-      result = a.union(b)
-      i += 1
-    }
-    result
-  }
-
-  def timeIntersect(reps: Int) = {
-    var i = 0
-    var result = a
-    while (i < reps) {
-      result = a.intersect(b)
-      i += 1
-    }
-    result
-  }
-
-  def timeDiff(reps: Int) = {
-    var i = 0
-    var result = a
-    while (i < reps) {
-      result = a.diff(b)
-      i += 1
-    }
-    result
-  }
-
-  def timeSubsetOf(reps: Int) = {
-    var i = 0
-    var result = false
-    while (i < reps) {
-      result = a.subsetOf(b)
-      i += 1
-    }
-    result
-  }
-}
-
-object SetBenchmark {
-
-  val th = ichi.bench.Thyme.warmed()
-
   def main(args: Array[String]) {
-    val args1 = Array("--saveResults", "./caliper-results/") ++ args
-    Runner.main(classOf[SetBenchmark], args1)
+    for {
+      size <- Seq(1,10,100, 1000)
+      offset <- Seq(0.0, 0.33, 0.66, 1.0)
+      keyType <- Seq("int", "string", "vector", "collision")
+    }
+    {
+      val bench = SetBenchmark(size, offset, elem(keyType)) _
+      val bench1 = bench(HashSet.empty)
+      val bench2 = bench(HashSet2.empty)
+      th.pbenchOff(s"size $size offset $offset keyType $keyType op union")(bench2.union)(bench1.union)
+      th.pbenchOff(s"size $size offset $offset keyType $keyType op diff")(bench2.diff)(bench1.diff)
+      th.pbenchOff(s"size $size offset $offset keyType $keyType op subsetOf")(bench2.subsetOf)(bench1.subsetOf)
+      th.pbenchOff(s"size $size offset $offset keyType $keyType op intersect")(bench2.intersect)(bench1.intersect)
+    }
   }
 }

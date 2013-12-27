@@ -14,9 +14,10 @@ object Build extends Build {
 
     // dependencies
     libraryDependencies ++= Seq(
-        "com.google.code.java-allocation-instrumenter" % "java-allocation-instrumenter" % "2.0",
-        "com.google.code.gson" % "gson" % "1.7.1",
-        "com.google.caliper" % "caliper" % "0.5-rc1",
+        "com.novocode" % "junit-interface" % "0.10" % "test"
+//        "com.google.code.java-allocation-instrumenter" % "java-allocation-instrumenter" % "2.0",
+//        "com.google.code.gson" % "gson" % "1.7.1",
+//        "com.google.caliper" % "caliper" % "0.5-rc1",
         "junit" % "junit" % "4.10",
         "org.scalatest" %% "scalatest" % "1.9.1"
     ),

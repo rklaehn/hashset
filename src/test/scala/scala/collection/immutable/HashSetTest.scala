@@ -1,10 +1,8 @@
-package scala.collection.immutable2
-import language.postfixOps
-import org.scalatest._
-import matchers.ShouldMatchers
+package scala.collection.immutable
 import org.junit.runner.RunWith
-import org.scalatest.junit.JUnitRunner
-import scala.collection.immutable
+import org.junit.runners.JUnit4
+import org.junit.Test
+import language.postfixOps
 
 abstract class SetTest[T] {
 
@@ -141,9 +139,9 @@ abstract class SetTest[T] {
 }
 
 object SetTest {
-  def apply[T](empty:Set[T], n:Int, createKey:Int=>T) : immutable.SetTest[T] = SimpleKeySetTest(empty, n, createKey)
+  def apply[T](empty:Set[T], n:Int, createKey:Int=>T) : SetTest[T] = SimpleKeySetTest(empty, n, createKey)
 
-  private case class SimpleKeySetTest[T](empty: Set[T], n: Int, f: Int => T) extends immutable.SetTest[T] {
+  private case class SimpleKeySetTest[T](empty: Set[T], n: Int, f: Int => T) extends SetTest[T] {
     def createElement(i: Int) = f(i)
   }
 }
@@ -156,50 +154,94 @@ object HashSetTests {
 
   case class Collision(i: Int) { override def hashCode = i / 5 }
 
-  lazy val intTests = immutable.SetTest[Any](empty, N, x => x)
+  lazy val intTests = SetTest[Any](empty, N, x => x)
 
-  lazy val stringTests = immutable.SetTest[Any](empty, N, i => i.toString.reverse.padTo(10, '0').reverse)
+  lazy val stringTests = SetTest[Any](empty, N, i => i.toString.reverse.padTo(10, '0').reverse)
 
-  lazy val collisionTests = immutable.SetTest[Any](empty, N, i => Collision(i))
+  lazy val collisionTests = SetTest[Any](empty, N, i => Collision(i))
 
   lazy val setTests = Seq(intTests, stringTests, collisionTests)
 
-  def all(f:immutable.SetTest[Any] => Any) {
+  def all(f:SetTest[Any] => Any) {
     for(test<-setTests)
       f(test)
   }
 }
 
-@RunWith(classOf[JUnitRunner])
-class HashSetSpec extends FlatSpec with ShouldMatchers {
+@RunWith(classOf[JUnit4])
+class HashSetBulkTest {
 
   import HashSetTests.all
 
-  "a HashSet" should "have equality that does not depend on order of elements" in {
-    HashSet(1,2) == HashSet(2, 1)
-    //    Rational(4,2) should equal (Rational(2))
-    //    Rational(9,6) should equal (Rational(3,2))
+  @Test
+  def testEquality() {
+    require(false)
+    require(HashSet(1,2) == HashSet(2, 1), "a HashSet should have equality that does not depend on order of elements")
   }
 
-  it should "contain all elements that have been added to it, and no others" in all(_.buildTest())
+  @Test
+  def testBuild() {
+    // it should contain all elements that have been added to it, and no others
+    all(_.buildTest())
+  }
 
-  "The filter method" should "produce sets of just elements that match the given predicate" in all(_.filterTest())
+  @Test
+  def testFilter() {
+    // The filter method should produce sets of just elements that match the given predicate
+    all(_.filterTest())
+  }
 
-  it should "return the original instance instead of an identical copy whenever possible" in all(_.filterSharingTest())
+  @Test
+  def testFilterSharing() {
+    // it should return the original instance instead of an identical copy whenever possible
+    all(_.filterSharingTest())
+  }
 
-  "the subsetOf method" should "return true for all subsets of the set" in all(_.subsetTestPositive())
+  @Test
+  def testSubsetOfPositive() {
+    // the subsetOf method should return true for all subsets of the set
+    all(_.subsetTestPositive())
+  }
 
-  it should "return false when called with a subset of the set" in all(_.subsetTestNegative())
+  @Test
+  def testSubsetOfNegative() {
+    // it should return false when called with a subset of the set
+    all(_.subsetTestNegative())
+  }
 
-  "The intersect method" should "work identical to the filter method" in all(_.intersectTest())
+  @Test
+  def testIntersect() {
+    // The intersect method should work identical to the filter method
+    all(_.intersectTest())
+  }
 
-  it should "return the original instance instead of an identical copy whenever possible" in all(_.intersectSharingTest())
+  @Test
+  def testIntersectSharing() {
+    // it should return the original instance instead of an identical copy whenever possible
+    all(_.intersectSharingTest())
+  }
 
-  "The diff method" should "work identical to the filterNot method" in all(_.diffTest())
+  @Test
+  def testDiff() {
+    // The diff method should work identical to the filterNot method
+    all(_.diffTest())
+  }
 
-  it should "return the original instance instead of an identical copy whenever possible" in all(_.diffTest())
+  @Test
+  def testDiffSharing() {
+    // it should return the original instance instead of an identical copy whenever possible
+    all(_.diffTest())
+  }
 
-  "The union method" should "produce a set that contains all elements of its left and right argument" in all(_.unionTest())
+  @Test
+  def testUnion() {
+    // The union method" should produce a set that contains all elements of its left and right argument
+    all(_.unionTest())
+  }
 
-  it should "return the original instance instead of an identical copy whenever possible" in all(_.unionSharingTest())
+  @Test
+  def testUnionSharing() {
+    // it should return the original instance instead of an identical copy whenever possible
+    all(_.unionSharingTest())
+  }
 }
