@@ -80,8 +80,8 @@ abstract class SetTest[T] {
     val s = make(elems)
     for (i <- 0 until n) {
       val t = s.filter(indexOfElem(_) < i)
-      require(t.size == i)
-      require(elems.take(i).forall(t.contains _))
+      require(t.size == i, "right size")
+      require(elems.take(i).forall(t.contains _), "right elements")
     }
   }
 

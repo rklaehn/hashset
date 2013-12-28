@@ -4,6 +4,7 @@ import collection.immutable.ListSet
 import collection.{GenTraversableOnce, GenSet, SetLike}
 import collection.generic.{CanBuildFrom, ImmutableSetFactory}
 import annotation.tailrec
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * An efficient immutable set
@@ -11,7 +12,7 @@ import annotation.tailrec
  */
 sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 
-  import HashSet.{nullToEmpty, BufferPool, LeafHashSet, HashSet1}
+  import HashSet.{nullToEmpty, LeafHashSet, HashSet1}
 
   override def contains(e: A): Boolean = contains0(e, computeHash(e), 0)
 
@@ -58,7 +59,10 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 
   final def subsetOf(that: HashSet[A]): Boolean = subsetOf0(that, 0)
 
-  override def filter(p: (A) => Boolean): HashSet[A] = nullToEmpty(filter0(p, new BufferPool[A]()))
+  override def filter(p: (A) => Boolean): HashSet[A] = nullToEmpty(
+    filter0(p, 0, new Array[Array[HashSet[A]]](7))
+    // new HashSet.FilterOp(p).filter(this)
+  )
 
   override def iterator: Iterator[A]
 
@@ -74,7 +78,7 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 
   protected def removed0(key: A, hash: Int, level: Int): HashSet[A]
 
-  protected def filter0(p: A => Boolean, pool: BufferPool[A]): HashSet[A]
+  protected def filter0(p: A => Boolean, depth:Int, pool:Array[Array[HashSet[A]]]): HashSet[A]
 
   protected def union0(that: HashSet[A], pool: BufferPool[A]): HashSet[A]
 
@@ -124,32 +128,6 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     }
   }
 
-  // helper class for caching buffers for bulk operations
-  private final class BufferPool[A] {
-
-    private[this] var depth = 0
-
-    private[this] var buffers: Array[Array[HashSet[A]]] = null
-
-    // allocate a 32 element buffer for this level and increase the depth
-    def getBuffer(): Array[HashSet[A]] = {
-      if (buffers eq null)
-        buffers = (new Array[Array[HashSet[A]]](7))
-      if (buffers(depth) eq null)
-        buffers(depth) = (new Array[HashSet[A]](32))
-      val result = buffers(depth)
-      depth += 1
-      result
-    }
-
-    // decrease the depth
-    @inline def freeBuffer() {
-      depth -= 1
-    }
-
-    @inline def level: Int = depth * 5
-  }
-
   implicit def canBuildFrom[A]: CanBuildFrom[Coll, A, HashSet[A]] = setCanBuildFrom[A]
   override def empty[A]: HashSet[A] = emptySet.asInstanceOf[HashSet[A]]
 
@@ -196,7 +174,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
     def removed0(key: A, hash: Int, level: Int): HashSet[A] = null
 
-    def filter0(p: A => Boolean, pool: BufferPool[A]): HashSet[A] = null
+    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = null
 
     def union0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = that
 
@@ -255,7 +233,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     def diff0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] =
       if (that.contains0(key, hash, pool.level)) null else this
 
-    def filter0(p: A => Boolean, pool: BufferPool[A]): HashSet[A] =
+    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] =
       if (p(key)) this else null
 
     def union0(that: HashSet[A], pool: BufferPool[A]) =
@@ -314,7 +292,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
           new HashSetCollision1(hash, ks1)
       } else this
 
-    def filter0(p: A => Boolean, pool: BufferPool[A]): HashSet[A] = {
+    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = {
       val ks1 = ks.filter(p)
       if (ks1.isEmpty)
         null
@@ -362,17 +340,13 @@ object HashSet extends ImmutableSetFactory[HashSet] {
   final case class HashTrieSet[A](bitmap: Int, elems: Array[HashSet[A]], size0: Int) extends HashSet[A] {
 
     // assert(size0 == elems.map(_.size).sum)
-    assert(Integer.bitCount(bitmap) == elems.length)
-    assert(elems.length > 1 || (elems.length == 1 && elems(0).isInstanceOf[HashTrieSet[_]]))
-    assert(size0 > 1)
+    // assert(Integer.bitCount(bitmap) == elems.length)
+    // assert(elems.length > 1 || (elems.length == 1 && elems(0).isInstanceOf[HashTrieSet[_]]))
+    // assert(size0 > 1)
 
     private[this] def truncate[A](buffer: Array[HashSet[A]], length: Int) = {
       val elems = new Array[HashSet[A]](length)
-      var i = 0
-      while (i < elems.length) {
-        elems(i) = buffer(i)
-        i += 1
-      }
+      java.lang.System.arraycopy(buffer, 0, elems, 0, length)
       elems
     }
 
@@ -686,14 +660,14 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     @inline private[this] def unsignedCompare(i: Int, j: Int) =
       (i < j) ^ (i < 0) ^ (j < 0)
 
-    def filter0(p: A => Boolean, pool: BufferPool[A]): HashSet[A] = {
+    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = {
       val a = this.elems
       // state for iteration over a
       var abm = this.bitmap
       var ai = 0
 
       // state for result buffer
-      val r = pool.getBuffer()
+      val r = getBuffer(pool, depth)
       var rbm = 0
       var ri = 0
       var rs = 0
@@ -702,7 +676,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         // highest remaining bit in abm
         val alsb = abm ^ (abm & (abm - 1))
         // filter the subnode (will return null as the empty node)
-        val sub1 = a(ai).filter0(p, pool)
+        val sub1 = a(ai).filter0(p, depth + 1, pool)
         // if we have a non-empty result (might be the original node, we don't care)
         if(sub1 ne null) {
           // store node in result buffer
@@ -719,7 +693,6 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         ai += 1
       }
 
-      pool.freeBuffer()
       // if the size is the same, it must be the same node, so ignore what is in r
       if (size0 == rs)
         this
@@ -766,4 +739,119 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     }
   }
 
+  // allocate a 32 element buffer for this level and increase the depth
+  def getBuffer[A](pool: Array[Array[HashSet[A]]], depth:Int): Array[HashSet[A]] = {
+    if (pool(depth) eq null)
+      pool(depth) = new Array[HashSet[A]](32)
+    pool(depth)
+  }
+
+  private final class FilterOp[A](p:A => Boolean) {
+    private[this] val r = new Array[HashSet[A]](7 * 32)
+    private[this] var ri = 0
+
+    def filter(t:HashSet[A]): HashSet[A] = t match {
+      case t:HashSet1[A] => filter0(t)
+      case t:HashTrieSet[A] => filter0(t)
+      case t:EmptySet[A] => t
+      case t:HashSetCollision1[A] => filter0(t)
+    }
+
+    private[this] def filter0(t:HashSet1[A]) : HashSet[A] =
+      if (p(t.key)) t else null
+
+    private[this] def filter0(t:HashSetCollision1[A]) : HashSet[A] = {
+      val ks1 = t.ks.filter(p)
+      if (ks1.isEmpty)
+        null
+      else if (ks1.tail.isEmpty)
+        new HashSet1(ks1.head, t.hash)
+      else if (ks1.size == t.size)
+        t
+      else
+        new HashSetCollision1(t.hash, ks1)
+    }
+
+    private[this] def filter0(t:HashTrieSet[A]) : HashSet[A] = {
+      val a = t.elems
+      // state for iteration over a
+      var abm = t.bitmap
+      var ai = 0
+
+      // state for result buffer
+      val ri0 = ri
+      var rbm = 0
+      var rs = 0
+      // iterate over all one bits in abm
+      while (abm!=0) {
+        // highest remaining bit in abm
+        val alsb = abm ^ (abm & (abm - 1))
+        // filter the subnode (will return null as the empty node)
+        val sub1 = filter(a(ai))
+        // if we have a non-empty result (might be the original node, we don't care)
+        if(sub1 ne null) {
+          // store node in result buffer
+          r(ri) = sub1
+          // increase result buffer index
+          ri += 1
+          // mark bit in result bitmap
+          rbm |= alsb
+          // add result size
+          rs += sub1.size
+        }
+        // clear lowest remaining one bit in abm and increase the a index
+        abm &= ~alsb
+        ai += 1
+      }
+      val length = ri - ri0
+      ri = ri0
+
+      // if the size is the same, it must be the same node, so ignore what is in r
+      if (t.size0 == rs)
+        t
+      else
+        newInstance(rbm, length, rs)
+    }
+
+    private[this] def newInstance(bitmap: Int, length: Int, size: Int) = {
+      if (length == 0)
+        null // marker for the empty set
+      else if (length == 1 && !r(ri).isInstanceOf[HashSet.HashTrieSet[_]])
+        r(ri) // only return HashTrieSet if it is necessary to retain the structure
+      else
+        new HashTrieSet[A](bitmap, truncate(length), size)
+    }
+
+    private[this] def truncate[A](length: Int) = {
+      val elems = new Array[HashSet[A]](length)
+      java.lang.System.arraycopy(r, ri, elems, 0, length)
+      elems
+    }
+  }
+}
+
+// helper class for caching buffers for bulk operations
+private final class BufferPool[A] {
+
+  private[this] var depth = 0
+
+  private[this] var buffers: Array[Array[HashSet[A]]] = null
+
+  // allocate a 32 element buffer for this level and increase the depth
+  def getBuffer(): Array[HashSet[A]] = {
+    if (buffers eq null)
+      buffers = new Array[Array[HashSet[A]]](7)
+    if (buffers(depth) eq null)
+      buffers(depth) = new Array[HashSet[A]](32)
+    val result = buffers(depth)
+    depth += 1
+    result
+  }
+
+  // decrease the depth
+  @inline def freeBuffer() {
+    depth -= 1
+  }
+
+  @inline def level: Int = depth * 5
 }
