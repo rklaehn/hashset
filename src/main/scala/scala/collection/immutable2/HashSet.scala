@@ -5,6 +5,7 @@ import collection.{GenTraversableOnce, GenSet, SetLike}
 import collection.generic.{CanBuildFrom, ImmutableSetFactory}
 import annotation.tailrec
 import scala.collection.mutable.ArrayBuffer
+import scala.collection.immutable2.HashSet.HashSetCollision1
 
 /**
  * An efficient immutable set
@@ -59,10 +60,28 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 
   final def subsetOf(that: HashSet[A]): Boolean = subsetOf0(that, 0)
 
-  override def filter(p: (A) => Boolean): HashSet[A] = nullToEmpty(
-    filter0(p, 0, new Array[Array[HashSet[A]]](7))
-    // new HashSet.FilterOp(p).filter(this)
-  )
+  /*
+  override final def filter(p: (A) => Boolean): HashSet[A] = {
+    var result = empty
+    foreachLeaf {
+      case x:HashSet1[A] =>
+        if(p(x.key))
+          result = result.addLeaf(x)
+      case x:HashSetCollision1[A] =>
+        val ks1 = x.ks.filter(p)
+        result = ks1.size match {
+          case 0 => result
+          case 1 => result.addLeaf(HashSet1(ks1.head, x.hash))
+          case _ => result.addLeaf(x.copy(ks = ks1))
+        }
+    }
+    result
+  }
+  */
+
+  override def filter(p: (A) => Boolean): HashSet[A] = nullToEmpty(filter0(p, 0, new Array[Array[HashSet[A]]](7)))
+
+  // override def filter(p: (A) => Boolean): HashSet[A] = new HashSet.FilterOp(p).filter(this)
 
   override def iterator: Iterator[A]
 
@@ -75,6 +94,10 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
   protected def subsetOf0(that: HashSet[A], level: Int): Boolean
 
   protected def union0(that: LeafHashSet[A], level: Int): HashSet[A]
+
+  private[HashSet] final def addLeaf(that: LeafHashSet[A]) : HashSet[A] = union0(that, 0)
+
+  protected def foreachLeaf[U](f:LeafHashSet[A] => U) : Unit
 
   protected def removed0(key: A, hash: Int, level: Int): HashSet[A]
 
@@ -100,6 +123,18 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 }
 
 object HashSet extends ImmutableSetFactory[HashSet] {
+
+  def printStructure[T](s:HashSet[T],prefix:String) : Unit = {
+    s match {
+      case x:EmptySet[T] => println(prefix + "EmptySet")
+      case x:HashSet1[T] => println(prefix + "HashSet1(" + x.key + ")")
+      case x:HashSetCollision1[T] => println(prefix + "HashSetCollision1(" + x.ks.mkString(",") + ")")
+      case x:HashTrieSet[T] =>
+        println(prefix + "HashTrieSet(" + x.elems.size + ")")
+        for(c<-x.elems)
+          printStructure(c, prefix + "    ")
+    }
+  }
 
   def validate[T](s: HashSet[T], level: Int = 0, mask: Int = 0, value: Int = 0) {
     s match {
@@ -181,6 +216,8 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     def intersect0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = null
 
     def diff0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = null
+
+    def foreachLeaf[U](f: (LeafHashSet[A]) => U): Unit = {}
   }
 
   sealed abstract class LeafHashSet[A] extends HashSet[A] {
@@ -238,6 +275,8 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
     def union0(that: HashSet[A], pool: BufferPool[A]) =
       that.union0(this, pool.level)
+
+    def foreachLeaf[U](f: (LeafHashSet[A]) => U): Unit = { f(this) }
   }
 
   final case class HashSetCollision1[A](hash: Int, ks: ListSet[A]) extends LeafHashSet[A] {
@@ -335,6 +374,8 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       case that: HashTrieSet[A] => that.union0(this, pool.level)
       case _ => this
     }
+
+    def foreachLeaf[U](f: (LeafHashSet[A]) => U): Unit = { f(this) }
   }
 
   final case class HashTrieSet[A](bitmap: Int, elems: Array[HashSet[A]], size0: Int) extends HashSet[A] {
@@ -702,8 +743,8 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
     def subsetOf0(that: HashSet[A], level: Int): Boolean = if (that eq this) true
     else that match {
-      case that: HashTrieSet[A] =>
-        // create local copies of members
+      case that: HashTrieSet[A] if this.size0 <= that.size0 =>
+        // create local mutable copies of members
         var abm = this.bitmap
         val a = this.elems
         var ai = 0
@@ -732,10 +773,19 @@ object HashSet extends ImmutableSetFactory[HashSet] {
           true
         } else false
       case _ =>
+        // if the other set is a HashTrieSet, but has less elements than this, it can not be a subset
         // if the other set is a HashSet1, we can not be a subset of it because we are a HashTrieSet with at least two children (see assertion)
         // if the other set is a HashSetCollision1, we can not be a subset of it because we are a HashTrieSet with at least two different hash codes
         // if the other set is the empty set, we are not a subset of it because we are not empty
         false
+    }
+
+    def foreachLeaf[U](f: (LeafHashSet[A]) => U): Unit = {
+      var i = 0
+      while (i < elems.length) {
+        elems(i).foreachLeaf(f)
+        i += 1
+      }
     }
   }
 
