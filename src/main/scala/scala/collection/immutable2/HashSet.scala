@@ -710,34 +710,26 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         }
         i += 1
       }
-      if (p.offset == offset0)
+      if (p.offset == offset0) {
+        // no need to reset the offset in p because it is unchanged
         null
-      else if (rs == size0) {
+      } else if (rs == size0) {
+        // we have to manually reset the offset in p
         p.offset = offset0
         this
       } else if (p.offset == offset0 + 1 && !p.buffer(offset0).isInstanceOf[HashTrieSet[A]]) {
+        // we have to manually reset the offset in p
         p.offset = offset0
         p.buffer(offset0)
       } else {
+        // we have to return a HashTrieSet
         val elems1 = p.getAndReset(offset0)
         val bitmap1 = if (elems1.length == elems.length) {
+          // we can reuse the original bitmap
           bitmap
         } else {
-          // calculate new bitmap
-          var abm = this.bitmap
-          var rbm = 0
-          while (abm != 0) {
-            // lowest remaining bit in abm
-            val alsb = abm ^ (abm & (abm - 1))
-            if ((kept & 1) != 0) {
-              // mark bit in result bitmap
-              rbm |= alsb
-            }
-            // clear lowest remaining one bit in abm
-            abm &= ~alsb
-            kept >>= 1
-          }
-          rbm
+          // calculate new bitmap by keeping just bits in the kept bitmask
+          keepBits(bitmap, kept)
         }
         HashTrieSet(bitmap1, elems1, rs)
       }
@@ -834,6 +826,25 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         i += 1
       }
     }
+  }
+
+  private def keepBits[A](bitmap: Int, keep: Int): Int = {
+    var result = 0
+    var current = bitmap
+    var kept = keep
+    while (current != 0) {
+      // lowest remaining bit in current
+      val lsb = current ^ (current & (current - 1))
+      if ((kept & 1) != 0) {
+        // mark bit in result bitmap
+        result |= lsb
+      }
+      // clear lowest remaining one bit in abm
+      current &= ~lsb
+      // look at the next kept bit
+      kept >>= 1
+    }
+    result
   }
 
   // allocate a 32 element buffer for this level and increase the depth
