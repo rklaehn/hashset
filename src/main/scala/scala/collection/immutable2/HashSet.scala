@@ -701,32 +701,35 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       var kept = 0
       // loop over all elements
       var i = 0
-      while(i < elems.length) {
+      while (i < elems.length) {
         val result = elems(i).filter0(p)
-        if(result ne null) {
+        if (result ne null) {
           p.add(result)
           rs += result.size
           kept |= (1 << i)
         }
         i += 1
       }
-      if(p.offset == offset0)
+      if (p.offset == offset0)
         null
-      else if(rs == size0) {
+      else if (rs == size0) {
         p.offset = offset0
         this
+      } else if (p.offset == offset0 + 1 && !p.buffer(offset0).isInstanceOf[HashTrieSet[A]]) {
+        p.offset = offset0
+        p.buffer(offset0)
       } else {
         val elems1 = p.getAndReset(offset0)
-        val bitmap1 = if(elems1.length == elems.length) {
+        val bitmap1 = if (elems1.length == elems.length) {
           bitmap
         } else {
           // calculate new bitmap
           var abm = this.bitmap
           var rbm = 0
-          while(abm != 0) {
+          while (abm != 0) {
             // lowest remaining bit in abm
             val alsb = abm ^ (abm & (abm - 1))
-            if((kept & 1) != 0) {
+            if ((kept & 1) != 0) {
               // mark bit in result bitmap
               rbm |= alsb
             }
@@ -842,7 +845,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
   private final class FilterState[A](p: A => Boolean, size:Int, toss:Boolean = false) extends (A => Boolean) {
 
-    private[this] val buffer : Array[HashSet[A]] = new Array[HashSet[A]]((size + 6) min (32 * 7))
+    val buffer : Array[HashSet[A]] = new Array[HashSet[A]]((size + 6) min (32 * 7))
 
     var offset = 0
 
