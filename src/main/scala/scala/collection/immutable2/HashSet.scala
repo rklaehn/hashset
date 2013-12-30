@@ -3,9 +3,6 @@ package scala.collection.immutable2
 import collection.immutable.ListSet
 import collection.{GenTraversableOnce, GenSet, SetLike}
 import collection.generic.{CanBuildFrom, ImmutableSetFactory}
-import annotation.tailrec
-import scala.collection.mutable.ArrayBuffer
-import scala.collection.immutable2.HashSet.HashSetCollision1
 
 /**
  * An efficient immutable set
@@ -13,7 +10,7 @@ import scala.collection.immutable2.HashSet.HashSetCollision1
  */
 sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 
-  import HashSet.{nullToEmpty, LeafHashSet, HashSet1}
+  import HashSet.{nullToEmpty, LeafHashSet, HashSet1, FilterState}
 
   override def contains(e: A): Boolean = contains0(e, computeHash(e), 0)
 
@@ -79,7 +76,7 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
   }
   */
 
-  override def filter(p: (A) => Boolean): HashSet[A] = nullToEmpty(filter0(p, 0, new Array[Array[HashSet[A]]](7)))
+  override def filter(p: (A) => Boolean): HashSet[A] = nullToEmpty(filter0(new FilterState[A](p, size)))
 
   // override def filter(p: (A) => Boolean): HashSet[A] = new HashSet.FilterOp(p).filter(this)
 
@@ -101,7 +98,7 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 
   protected def removed0(key: A, hash: Int, level: Int): HashSet[A]
 
-  protected def filter0(p: A => Boolean, depth:Int, pool:Array[Array[HashSet[A]]]): HashSet[A]
+  protected def filter0(p:FilterState[A]): HashSet[A]
 
   protected def union0(that: HashSet[A], pool: BufferPool[A]): HashSet[A]
 
@@ -209,7 +206,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
     def removed0(key: A, hash: Int, level: Int): HashSet[A] = null
 
-    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = null
+    def filter0(p: FilterState[A]): HashSet[A] = null
 
     def union0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = that
 
@@ -270,7 +267,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     def diff0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] =
       if (that.contains0(key, hash, pool.level)) null else this
 
-    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] =
+    def filter0(p: FilterState[A]): HashSet[A] =
       if (p(key)) this else null
 
     def union0(that: HashSet[A], pool: BufferPool[A]) =
@@ -331,7 +328,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
           new HashSetCollision1(hash, ks1)
       } else this
 
-    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = {
+    def filter0(p: FilterState[A]): HashSet[A] = {
       val ks1 = ks.filter(p)
       if (ks1.isEmpty)
         null
@@ -385,12 +382,6 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     // assert(elems.length > 1 || (elems.length == 1 && elems(0).isInstanceOf[HashTrieSet[_]]))
     // assert(size0 > 1)
 
-    private[this] def truncate[A](buffer: Array[HashSet[A]], length: Int) = {
-      val elems = new Array[HashSet[A]](length)
-      java.lang.System.arraycopy(buffer, 0, elems, 0, length)
-      elems
-    }
-
     private[this] def allEq[A <: AnyRef](buffer: Array[A], proto: Array[A]): Boolean = {
       var i = 0
       while (i < proto.length) {
@@ -407,7 +398,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       else if (length == 1 && !buffer(0).isInstanceOf[HashSet.HashTrieSet[_]])
         buffer(0) // only return HashTrieSet if it is necessary to retain the structure
       else
-        new HashTrieSet[A](bitmap, truncate(buffer, length), size)
+        new HashTrieSet[A](bitmap, java.util.Arrays.copyOf(buffer, length), size)
     }
 
     override def size = size0
@@ -701,7 +692,59 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     @inline private[this] def unsignedCompare(i: Int, j: Int) =
       (i < j) ^ (i < 0) ^ (j < 0)
 
-    def filter0(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = {
+    def filter0(p: FilterState[A]): HashSet[A] = {
+      // store initial offset
+      val offset0 = p.offset
+      // result size
+      var rs = 0
+      // bitmap for kept elems
+      var kept = 0
+      // loop over all elements
+      var i = 0
+      while(i < elems.length) {
+        val result = elems(i).filter0(p)
+        if(result ne null) {
+          p.add(result)
+          rs += result.size
+          kept |= (1 << i)
+        }
+        i += 1
+      }
+      if(p.offset == offset0)
+        null
+      else if(rs == size0) {
+        p.offset = offset0
+        this
+      } else {
+        val elems1 = p.getAndReset(offset0)
+        val bitmap1 = if(elems1.length == elems.length) {
+          bitmap
+        } else {
+          // calculate new bitmap
+          var abm = this.bitmap
+          var rbm = 0
+          while(abm != 0) {
+            // lowest remaining bit in abm
+            val alsb = abm ^ (abm & (abm - 1))
+            if((kept & 1) != 0) {
+              // mark bit in result bitmap
+              rbm |= alsb
+            }
+            // clear lowest remaining one bit in abm
+            abm &= ~alsb
+            kept >>= 1
+          }
+          rbm
+        }
+        HashTrieSet(bitmap1, elems1, rs)
+      }
+    }
+
+    /*
+    def filter0_(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = {
+
+
+
       val a = this.elems
       // state for iteration over a
       var abm = this.bitmap
@@ -740,6 +783,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       else
         newInstance(rbm, r, ri, rs)
     }
+    */
 
     def subsetOf0(that: HashSet[A], level: Int): Boolean = if (that eq this) true
     else that match {
@@ -794,6 +838,28 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     if (pool(depth) eq null)
       pool(depth) = new Array[HashSet[A]](32)
     pool(depth)
+  }
+
+  private final class FilterState[A](p: A => Boolean, size:Int, toss:Boolean = false) extends (A => Boolean) {
+
+    private[this] val buffer : Array[HashSet[A]] = new Array[HashSet[A]]((size + 6) min (32 * 7))
+
+    var offset = 0
+
+    @inline
+    def add(elem:HashSet[A]) {
+      buffer(offset) = elem
+      offset += 1
+    }
+
+    def getAndReset(offset0:Int) : Array[HashSet[A]] = {
+      val result = new Array[HashSet[A]](offset - offset0)
+      System.arraycopy(buffer, offset0, result, 0, result.length)
+      offset = offset0
+      result
+    }
+
+    def apply(value:A) = p(value) ^ toss
   }
 
   private final class FilterOp[A](p:A => Boolean) {
