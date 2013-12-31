@@ -330,14 +330,17 @@ object HashSet extends ImmutableSetFactory[HashSet] {
 
     def filter0(p: FilterState[A]): HashSet[A] = {
       val ks1 = ks.filter(p)
-      if (ks1.isEmpty)
-        null
-      else if (ks1.tail.isEmpty)
-        new HashSet1(ks1.head, hash)
-      else if (ks1.size == this.size)
-        this
-      else
-        new HashSetCollision1(hash, ks1)
+      ks1.size match {
+        case 0 =>
+          null
+        case 1 =>
+          new HashSet1(ks1.head, hash)
+        case x if x == ks.size =>
+          this
+        case _ =>
+          new HashSetCollision1(hash, ks1)
+
+      }
     }
 
     def intersect0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = {
@@ -704,8 +707,11 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       while (i < elems.length) {
         val result = elems(i).filter0(p)
         if (result ne null) {
+          // add the result to the buffer in p
           p.add(result)
+          // add the result size
           rs += result.size
+          // mark the bit i as kept
           kept |= (1 << i)
         }
         i += 1
@@ -734,51 +740,6 @@ object HashSet extends ImmutableSetFactory[HashSet] {
         HashTrieSet(bitmap1, elems1, rs)
       }
     }
-
-    /*
-    def filter0_(p: A => Boolean, depth:Int, pool: Array[Array[HashSet[A]]]): HashSet[A] = {
-
-
-
-      val a = this.elems
-      // state for iteration over a
-      var abm = this.bitmap
-      var ai = 0
-
-      // state for result buffer
-      val r = getBuffer(pool, depth)
-      var rbm = 0
-      var ri = 0
-      var rs = 0
-      // iterate over all one bits in abm
-      while (abm!=0) {
-        // highest remaining bit in abm
-        val alsb = abm ^ (abm & (abm - 1))
-        // filter the subnode (will return null as the empty node)
-        val sub1 = a(ai).filter0(p, depth + 1, pool)
-        // if we have a non-empty result (might be the original node, we don't care)
-        if(sub1 ne null) {
-          // store node in result buffer
-          r(ri) = sub1
-          // mark bit in result bitmap
-          rbm |= alsb
-          // increase result buffer index
-          ri += 1
-          // add result size
-          rs += sub1.size
-        }
-        // clear lowest remaining one bit in abm and increase the a index
-        abm &= ~alsb
-        ai += 1
-      }
-
-      // if the size is the same, it must be the same node, so ignore what is in r
-      if (size0 == rs)
-        this
-      else
-        newInstance(rbm, r, ri, rs)
-    }
-    */
 
     def subsetOf0(that: HashSet[A], level: Int): Boolean = if (that eq this) true
     else that match {
@@ -832,7 +793,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     var result = 0
     var current = bitmap
     var kept = keep
-    while (current != 0) {
+    while (kept != 0) {
       // lowest remaining bit in current
       val lsb = current ^ (current & (current - 1))
       if ((kept & 1) != 0) {
@@ -842,30 +803,56 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       // clear lowest remaining one bit in abm
       current &= ~lsb
       // look at the next kept bit
-      kept >>= 1
+      kept >>>= 1
     }
     result
   }
 
-  // allocate a 32 element buffer for this level and increase the depth
-  def getBuffer[A](pool: Array[Array[HashSet[A]]], depth:Int): Array[HashSet[A]] = {
-    if (pool(depth) eq null)
-      pool(depth) = new Array[HashSet[A]](32)
-    pool(depth)
-  }
-
+  /**
+   * Stateful object containing information used by the filter0 method. This also implements A=>Boolean so it can be
+   * used as a predicate without creating an additional instance.
+   * @param p The predicate for which to filter
+   * @param size the maximum size of the result set
+   *             This is used to limit the size of the internal buffer
+   * @param toss set this to true to negate the predicate
+   * @tparam A the element type of the set
+   */
   private final class FilterState[A](p: A => Boolean, size:Int, toss:Boolean = false) extends (A => Boolean) {
 
+    /**
+     * The buffer used to store nodes when creating new element arrays.
+     * Lazily initialized because we might not need it.
+     *
+     * the maximum size of the buffer is 32 * 7, since we have a maximum of 7 levels with a branching factor
+     * of 32 each. But for a small set this might be much too large. For a small set the worst case is all leaves
+     * being at the deepest possible level, which gives a required buffer size of n+6 (6 HashTrieSet nodes with one
+     * child each).
+     */
+
+    //var buffer : Array[HashSet[A]] = null
     val buffer : Array[HashSet[A]] = new Array[HashSet[A]]((size + 6) min (32 * 7))
 
+    /**
+     * The current offset into the buffer
+     */
     var offset = 0
 
-    @inline
+    /**
+     * Add an element to the buffer and increase the offset
+     * @param elem
+     */
     def add(elem:HashSet[A]) {
+      //if(buffer eq null)
+      //  buffer = new Array[HashSet[A]]((size + 6) min (32 * 7))
       buffer(offset) = elem
       offset += 1
     }
 
+    /**
+     * Get all elements since offset0 and also reset offset to offset0
+     * @param offset0 the initial offset
+     * @return a copy of elements from offset0 until offset
+     */
     def getAndReset(offset0:Int) : Array[HashSet[A]] = {
       val result = new Array[HashSet[A]](offset - offset0)
       System.arraycopy(buffer, offset0, result, 0, result.length)
@@ -874,89 +861,6 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     }
 
     def apply(value:A) = p(value) ^ toss
-  }
-
-  private final class FilterOp[A](p:A => Boolean) {
-    private[this] val r = new Array[HashSet[A]](7 * 32)
-    private[this] var ri = 0
-
-    def filter(t:HashSet[A]): HashSet[A] = t match {
-      case t:HashSet1[A] => filter0(t)
-      case t:HashTrieSet[A] => filter0(t)
-      case t:EmptySet[A] => t
-      case t:HashSetCollision1[A] => filter0(t)
-    }
-
-    private[this] def filter0(t:HashSet1[A]) : HashSet[A] =
-      if (p(t.key)) t else null
-
-    private[this] def filter0(t:HashSetCollision1[A]) : HashSet[A] = {
-      val ks1 = t.ks.filter(p)
-      if (ks1.isEmpty)
-        null
-      else if (ks1.tail.isEmpty)
-        new HashSet1(ks1.head, t.hash)
-      else if (ks1.size == t.size)
-        t
-      else
-        new HashSetCollision1(t.hash, ks1)
-    }
-
-    private[this] def filter0(t:HashTrieSet[A]) : HashSet[A] = {
-      val a = t.elems
-      // state for iteration over a
-      var abm = t.bitmap
-      var ai = 0
-
-      // state for result buffer
-      val ri0 = ri
-      var rbm = 0
-      var rs = 0
-      // iterate over all one bits in abm
-      while (abm!=0) {
-        // highest remaining bit in abm
-        val alsb = abm ^ (abm & (abm - 1))
-        // filter the subnode (will return null as the empty node)
-        val sub1 = filter(a(ai))
-        // if we have a non-empty result (might be the original node, we don't care)
-        if(sub1 ne null) {
-          // store node in result buffer
-          r(ri) = sub1
-          // increase result buffer index
-          ri += 1
-          // mark bit in result bitmap
-          rbm |= alsb
-          // add result size
-          rs += sub1.size
-        }
-        // clear lowest remaining one bit in abm and increase the a index
-        abm &= ~alsb
-        ai += 1
-      }
-      val length = ri - ri0
-      ri = ri0
-
-      // if the size is the same, it must be the same node, so ignore what is in r
-      if (t.size0 == rs)
-        t
-      else
-        newInstance(rbm, length, rs)
-    }
-
-    private[this] def newInstance(bitmap: Int, length: Int, size: Int) = {
-      if (length == 0)
-        null // marker for the empty set
-      else if (length == 1 && !r(ri).isInstanceOf[HashSet.HashTrieSet[_]])
-        r(ri) // only return HashTrieSet if it is necessary to retain the structure
-      else
-        new HashTrieSet[A](bitmap, truncate(length), size)
-    }
-
-    private[this] def truncate[A](length: Int) = {
-      val elems = new Array[HashSet[A]](length)
-      java.lang.System.arraycopy(r, ri, elems, 0, length)
-      elems
-    }
   }
 }
 

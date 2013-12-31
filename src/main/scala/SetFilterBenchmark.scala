@@ -12,7 +12,20 @@ object SetFilterBenchmark extends App {
   val e1 = HashSet2.empty[Int] // me
   val e2 = HashSet3.empty[Int] // rex
 
-  def compare(n:Int, k:Int) = {
+  def compare2(n:Int, k:Int) = {
+    val s0 = e0 ++ (0 until n)
+    val (r0,t0) = th.benchPairWarm(() => s0.filter(_ < k))
+
+    val s1 = e1 ++ (0 until n)
+    val (r1,t1) = th.benchPairWarm(() => s1.filter(_ < k))
+
+    require(r0 == r1)
+
+    // th.pbenchOff(s"$n\t$k\t")(s0.filter(_ < k).isEmpty)(s1.filter(_ < k).isEmpty)
+    (t0.runtime, t1.runtime)
+  }
+  
+  def compare3(n:Int, k:Int) = {
     val s0 = e0 ++ (0 until n)
     val (r0,t0) = th.benchPairWarm(() => s0.filter(_ < k))
 
@@ -32,14 +45,57 @@ object SetFilterBenchmark extends App {
 
   def rToS(r:Double) = r.formatted("%.3f")
 
-  def bench() = {
+  def linearBenchmark(n:Int) {
+
+    def work(s:Set[Int]) : Int = {
+      var result = 0
+      for(i<-0 until s.size by s.size / 100) {
+        result += s.filter(_<i).size
+      }
+      result
+    }
+
+    val a = HashSet.empty[Int] ++ (0 until n)
+    val b = HashSet2.empty[Int] ++ (0 until n)
+    val (r0, t0) = th.benchPairWarm(() => work(a))
+    val (r1, t1) = th.benchPairWarm(() => work(b))
+
+    val time0 = tToS(t0.runtime)
+    val time1 = tToS(t1.runtime)
+    val ratio = rToS(t0.runtime/t1.runtime)
+    println(s"$time0\t$time1\t$ratio")
+  }
+  linearBenchmark(10000)
+
+  def bench2() = {
+    var total0 = 0.0
+    var total1 = 0.0
+    val sizes = 0 +: (0 until 12).map(x => math.pow(2,x).toInt)
+    println(s"n\tk\tt0[us]\tt1[us]\tt0/t1")
+    def execute(n:Int, k:Int) {
+      val (t0, t1) = compare2(n,k)
+      val r1 = t0 / t1
+      println(s"$n\t$k\t${tToS(t0)}\t${tToS(t1)}\t${rToS(r1)}")
+      total0 += t0
+      total1 += t1
+    }
+    for {
+      n <- sizes
+      k <- sizes
+      if k <= n
+    } execute(n, k)
+    println("Old set total [us]" + tToS(total0))
+    println("New set total [us]" + tToS(total1))
+  }
+
+  def bench3() = {
     var total0 = 0.0
     var total1 = 0.0
     var total2 = 0.0
     val sizes = 0 +: (0 until 12).map(x => math.pow(2,x).toInt)
     println(s"n\tk\tt0[us]\tt1[us]\tt2[us]\tt0/t1\tt0/t2")
     def execute(n:Int, k:Int) {
-      val (t0, t1, t2) = compare(n,k)
+      val (t0, t1, t2) = compare3(n,k)
       val r1 = t0 / t1
       val r2 = t0 / t2
       println(s"$n\t$k\t${tToS(t0)}\t${tToS(t1)}\t${tToS(t2)}\t${rToS(r1)}\t${rToS(r2)}")
@@ -57,7 +113,7 @@ object SetFilterBenchmark extends App {
     println("New set (Rex) total [us]" + tToS(total2))
   }
 
-  bench()
+  bench2()
 
   def biasedToFalseBenchmark(s:Set[Int]) : Unit = {
     val size = s.size
