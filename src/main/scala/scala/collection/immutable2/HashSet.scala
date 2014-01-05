@@ -57,25 +57,6 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
 
   final def subsetOf(that: HashSet[A]): Boolean = subsetOf0(that, 0)
 
-  /*
-  override final def filter(p: (A) => Boolean): HashSet[A] = {
-    var result = empty
-    foreachLeaf {
-      case x:HashSet1[A] =>
-        if(p(x.key))
-          result = result.addLeaf(x)
-      case x:HashSetCollision1[A] =>
-        val ks1 = x.ks.filter(p)
-        result = ks1.size match {
-          case 0 => result
-          case 1 => result.addLeaf(HashSet1(ks1.head, x.hash))
-          case _ => result.addLeaf(x.copy(ks = ks1))
-        }
-    }
-    result
-  }
-  */
-
   override def filter(p: (A) => Boolean): HashSet[A] = nullToEmpty(filter0(new FilterState[A](p, size)))
 
   // override def filter(p: (A) => Boolean): HashSet[A] = new HashSet.FilterOp(p).filter(this)
@@ -91,8 +72,6 @@ sealed abstract class HashSet[A] extends Set[A] with SetLike[A, HashSet[A]] {
   protected def subsetOf0(that: HashSet[A], level: Int): Boolean
 
   protected def union0(that: LeafHashSet[A], level: Int): HashSet[A]
-
-  private[HashSet] final def addLeaf(that: LeafHashSet[A]) : HashSet[A] = union0(that, 0)
 
   protected def foreachLeaf[U](f:LeafHashSet[A] => U) : Unit
 
@@ -491,8 +470,9 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       }
     }
 
-    def union0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = if (that eq this) this
-    else that match {
+    def union0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = that match {
+      case that if that eq this =>
+        this
       case that: HashSet1[A] =>
         this.union0(that, pool.level)
       case that: HashTrieSet[A] =>
@@ -555,8 +535,8 @@ object HashSet extends ImmutableSetFactory[HashSet] {
       case _ => this
     }
 
-    def intersect0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = if (that eq this) this
-    else that match {
+    def intersect0(that: HashSet[A], pool: BufferPool[A]): HashSet[A] = that match {
+      case that if that eq this => this
       case that: HashSet1[A] =>
         that.intersect0(this, pool)
       case that: HashTrieSet[A] =>
