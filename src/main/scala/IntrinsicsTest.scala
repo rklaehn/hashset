@@ -20,15 +20,16 @@ object Node {
   @inline private def mask(level:Int) =
     -1L >>> level
 
-  @inline private[this] def level(a:Long, b:Long) =
-    (JavaLong.numberOfLeadingZeros(a ^ b) / 5) * 5
-
-  @inline private[this] def index(value:Long, level:Int) = {
-    if(level == 60)
-      value.toInt & 0xF
+  @inline def level(a:Long, b:Long) = {
+    val lz = JavaLong.numberOfLeadingZeros(a ^ b)
+    if(lz < 4)
+      0
     else
-      (value >>> (59 - level)).toInt & 0x1F
+      ((lz + 1) / 5) * 5 -1
   }
+
+  @inline private[this] def index(value:Long, level:Int) =
+    (value >>> (59 - level)).toInt & 0x1F
 
   def print(node:Any, prefix:String = "") : Unit = node match {
     case null =>
@@ -131,13 +132,18 @@ object IntrinsicsTest extends App {
 
   var tree : Any = null
 
+  for(i<-0 until 64) {
+    val x = 1L << i
+    println(x.toBin + " " + Node.level(x,0))
+  }
+
   for(value <- 0L until 100L) {
     tree = Node.insert(tree, value)
   }
   Node.print(tree)
 
   def debugLevel(a:Long, b:Long) : Unit = {
-    val level1 = level(a,b)
+    val level1 = Node.level(a,b)
     val mask = -1L >>> level1
     val ia = (a >>> (60 - level1)).toInt
     val ib = (b >>> (60 - level1)).toInt
@@ -151,16 +157,6 @@ object IntrinsicsTest extends App {
     println("ia      " + ia.toBin)
     println("ib      " + ib.toBin)
 
-  }
-
-  def level(a:Long, b:Long) = {
-    val x = a ^ b
-    (JavaLong.numberOfLeadingZeros(x) / 5) * 5
-  }
-
-  def level1(a:Long, b:Long) = {
-    val x = a ^ b
-    JavaLong.numberOfTrailingZeros(x)
   }
 
   def bitCount0(): Int = {
@@ -212,8 +208,6 @@ object IntrinsicsTest extends App {
   import th.autoWarmer
 
   val l = LongMap.empty[Int]
-  th.pbenchWarm(() => level(-1L,1L))
-  th.pbenchWarm(() => level1(-1L,1L))
   th.pbenchOffWarm("bitCount")(() => bitCount0())(() => bitCount1())
   th.pbenchOffWarm("numberOfTrailingZeros")(() => trailingZeros0())(() => trailingZeros1())
 }
