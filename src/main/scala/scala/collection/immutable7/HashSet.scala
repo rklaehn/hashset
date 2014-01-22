@@ -119,7 +119,7 @@ object HashSet extends ImmutableSetFactory[HashSet] {
     val mask = (1 << index)
     val offset =
       if(set.bitmap == -1)
-        index & 0x1f
+        index
       else if((set.bitmap & mask) != 0)
         Integer.bitCount(set.bitmap & (mask-1))
       else
