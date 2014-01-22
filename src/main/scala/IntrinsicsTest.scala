@@ -1,6 +1,33 @@
 import ichi.bench.Thyme
 import java.lang.{Long => JavaLong}
 import scala.collection.immutable.LongMap
+import scala.collection.SetLike
+
+final class LongSet private (private val root:Any) extends Set[Long] with SetLike[Long, LongSet] {
+
+  def contains(elem: Long): Boolean = Node.contains(root, elem)
+
+  def +(elem: Long): LongSet = copy(Node.insert(root, elem))
+
+  def -(elem: Long): LongSet = ???
+
+  def iterator: Iterator[Long] = {
+    val result = Array.newBuilder[Long]
+    foreach(result.+=)
+    result.result().iterator
+  }
+
+  override def foreach[U](f:Long => U) = Node.traverse(root, f)
+
+  override def empty = LongSet.empty
+
+  private[this] def copy(value:Any) = if(value.asInstanceOf[AnyRef] eq root.asInstanceOf[AnyRef]) this else new LongSet(value)
+}
+
+object LongSet {
+
+  val empty = new LongSet(null)
+}
 
 final class Node(val prefix:Long, val level:Int, val bitmap:Int, val children:Array[Any]) {
   require(JavaLong.bitCount(bitmap) > 1)
@@ -20,27 +47,51 @@ object Node {
   @inline private def mask(level:Int) =
     -1L >>> level
 
+  /*
+  @inline def level(a:Long, b:Long) = {
+    val lz = JavaLong.numberOfLeadingZeros(a ^ b)
+    (lz / 4) * 4
+  }
+
+  @inline private[this] def index(value:Long, level:Int) = {
+    (value >>> (60 - level)).toInt & 0x1F
+  } */
+
   @inline def level(a:Long, b:Long) = {
     val lz = JavaLong.numberOfLeadingZeros(a ^ b)
     if(lz < 4)
       0
     else
-      ((lz + 1) / 5) * 5 -1
+      ((lz + 1) / 5) * 5 - 1
   }
 
   @inline private[this] def index(value:Long, level:Int) =
     (value >>> (59 - level)).toInt & 0x1F
 
+  def stats(node:Any, hist:Array[Int] = new Array[Int](33)) : IndexedSeq[Int] = node match {
+    case null =>
+      hist
+    case node:Node =>
+      hist(Integer.bitCount(node.bitmap)) += 1
+      for(child<-node.children)
+        stats(child, hist)
+      hist
+    case _ =>
+      val leaf = node.asInstanceOf[Long]
+      hist
+  }
+
   def print(node:Any, prefix:String = "") : Unit = node match {
     case null =>
       println(prefix + "empty")
-    case leaf:Long =>
-      println(prefix + leaf)
     case node:Node =>
       val prefix1 = prefix + "    "
       println(prefix + "Node(" + node.prefix + "," + node.level + "," + node.bitmap.toBin + "," + node.children.length + ")")
       for(child<-node.children)
         print(child, prefix1)
+    case _ =>
+      val leaf = node.asInstanceOf[Long]
+      println(prefix + leaf)
   }
 
   def join[T](va:Long, a: Any, vb:Long, b: Any): Node = {
@@ -54,17 +105,47 @@ object Node {
     new Node(prefix, level, bitmap, children)
   }
 
-  def get(node:Any, value:Long) : Option[Any] = node match {
+  def contains(node:Any, value:Long) : Boolean = node match {
+    case null =>
+      false
     case node:Node =>
       if((value & node.prefixBits) != node.prefix)
-        None
+        false
       else {
         val index = this.index(value, node.level)
-        val offset = Integer.bitCount(node.bitmap & ((1 << index)-1))
-        get(node.children(offset), value)
+        val offset =
+          if(node.bitmap == -1) {
+            index
+          } else {
+            val belowMask = (1 << index) - 1
+            Integer.bitCount(node.bitmap & belowMask)
+          }
+        contains(node.children(offset), value)
       }
-    case leaf:Long =>
-      if(leaf == value) Some(leaf) else None
+    case _ =>
+      val leaf = node.asInstanceOf[Long]
+      leaf == value
+  }
+
+  def traverse[U](node:Any, f:Long => U) : Unit = node match {
+    case null =>
+    case node:Node =>
+      var i = 0
+      while (i < node.children.length) {
+        traverse(node.children(i), f)
+        i += 1
+      }
+    case _ =>
+      val leaf = node.asInstanceOf[Long]
+      f(leaf)
+  }
+
+  def create(values:Seq[Long]) : Any = {
+    var tree : Any = null
+    for(value <- values) {
+      tree = Node.insert(tree, value)
+    }
+    tree
   }
 
   def insert(node:Any, value:Long) : Any = node match {
@@ -80,7 +161,11 @@ object Node {
         // common prefix
         val index = this.index(value, node.level)
         val mask = 1 << index
-        val offset = Integer.bitCount(node.bitmap & (mask-1))
+        val offset =
+          if(node.bitmap == -1)
+            index
+          else
+            Integer.bitCount(node.bitmap & (mask-1))
         if((node.bitmap & mask) != 0) {
           // bucket already exists
           val child0 = node.children(offset)
@@ -104,11 +189,12 @@ object Node {
 
         }
       }
-    case value0:Long =>
-      if(value0 == value)
+    case _ =>
+      val leaf = node.asInstanceOf[Long]
+      if(leaf == value)
         node
       else
-        join(value0, node, value, value)
+        join(leaf, node, value, value)
   }
 }
 
@@ -130,17 +216,63 @@ object Implicits {
 object IntrinsicsTest extends App {
   import Implicits._
 
-  var tree : Any = null
-
   for(i<-0 until 64) {
     val x = 1L << i
     println(x.toBin + " " + Node.level(x,0))
   }
 
-  for(value <- 0L until 100L) {
-    tree = Node.insert(tree, value)
+  def test0() {
+
+    var tree : Any = null
+    val random = new scala.util.Random(0)
+    for(i <- 0L until 10000L) {
+      val value = random.nextInt(1000000000)
+      tree = Node.insert(tree, value)
+    }
+    // Node.print(tree)
+    val stats = Node.stats(tree)
+    val avg = stats.zipWithIndex.map { case (i,n) => i * n}.sum.toDouble / stats.sum
+    println(stats)
+    println(avg)
   }
-  Node.print(tree)
+
+  def test1() {
+
+    var tree : Any = null
+    val random = new scala.util.Random(0)
+    for(i <- 0L until 10000L) {
+      val value = i * 100000L
+      tree = Node.insert(tree, value)
+    }
+    // Node.print(tree)
+    val stats = Node.stats(tree)
+    val avg = stats.zipWithIndex.map { case (i,n) => i * n}.sum.toDouble / stats.sum
+    println(stats)
+    println(avg)
+  }
+
+  def test2() {
+
+    var tree : Any = null
+    val random = new scala.util.Random(0)
+    for(i <- 0L until 10000L) {
+      val value = i << 10
+      tree = Node.insert(tree, value)
+    }
+    //Node.print(tree)
+    val stats = Node.stats(tree)
+    val avg = stats.zipWithIndex.map { case (i,n) => i * n}.sum.toDouble / stats.sum
+    println(stats)
+    println(avg)
+  }
+  test0()
+  test1()
+  test2()
+
+  val t = Node.create((-1L to 1L).map(_ + Long.MaxValue))
+  Node.print(t)
+  Node.traverse(t, x => println(x - Long.MaxValue))
+
 
   def debugLevel(a:Long, b:Long) : Unit = {
     val level1 = Node.level(a,b)
@@ -199,6 +331,14 @@ object IntrinsicsTest extends App {
     result
   }
 
+  def makeSet1(elements:Seq[Long]) : Any = {
+    Node.create(elements)
+  }
+
+  def makeSet0(elements:Seq[(Long,Unit)]) : Any = {
+    LongMap.empty[Unit] ++ elements
+  }
+
 
   debugLevel(0,1)
   debugLevel(0,10)
@@ -208,6 +348,12 @@ object IntrinsicsTest extends App {
   import th.autoWarmer
 
   val l = LongMap.empty[Int]
+  val a = (0L until 1000L).toArray
+  val b = a.map(x => x -> (())).toArray
+  val s1 = LongSet.empty ++ (0L until 1000000L)
+  val s0 = scala.collection.immutable.Set.empty[Long] ++ (0L until 1000000L)
   th.pbenchOffWarm("bitCount")(() => bitCount0())(() => bitCount1())
   th.pbenchOffWarm("numberOfTrailingZeros")(() => trailingZeros0())(() => trailingZeros1())
+  th.pbenchOffWarm("mkSet")(() => makeSet1(a))(() => makeSet0(b))
+  th.pbenchOffWarm("set.contains")(() => s1.contains(500000L))(() => s0.contains(500000L))
 }
